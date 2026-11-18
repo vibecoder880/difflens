@@ -19,4 +19,5 @@ pub mod ocr;
 pub mod report;
 
 pub use error::{CoreError, CoreResult};
+pub use heuristic::{ALL_LABEL_KEYS, enrich};
 pub use model::*;

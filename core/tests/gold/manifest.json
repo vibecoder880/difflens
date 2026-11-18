@@ -329,5 +329,84 @@
         ]
       ]
     }
+  ],
+  "enrichment_cases": [
+    {
+      "name": "vi_money_dot_thousands_changed",
+      "old": "Phí dịch vụ là 1.500.000₫ mỗi tháng.",
+      "new": "Phí dịch vụ là 2.000.000₫ mỗi tháng.",
+      "rules": ["MONEY_CHANGED"],
+      "severity": "medium"
+    },
+    {
+      "name": "vi_money_scale_word_changed",
+      "old": "Phí hợp đồng là 2 tỷ mỗi tháng.",
+      "new": "Phí hợp đồng là 3 tỷ mỗi tháng.",
+      "rules": ["MONEY_CHANGED"],
+      "severity": "medium"
+    },
+    {
+      "name": "duration_halved",
+      "old": "Thanh toán trong vòng 30 ngày kể từ ngày ký.",
+      "new": "Thanh toán trong vòng 15 ngày kể từ ngày ký.",
+      "rules": ["DURATION_CHANGED"],
+      "severity": "medium"
+    },
+    {
+      "name": "date_vn_words_changed",
+      "old": "Hạn thanh toán là ngày 15 tháng 3 năm 2026.",
+      "new": "Hạn thanh toán là ngày 15 tháng 6 năm 2026.",
+      "rules": ["DATE_CHANGED"],
+      "severity": "medium"
+    },
+    {
+      "name": "percent_changed",
+      "old": "Chiết khấu sớm là 5% giá trị đơn hàng.",
+      "new": "Chiết khấu sớm là 12,5% giá trị đơn hàng.",
+      "rules": ["PERCENT_CHANGED"],
+      "severity": "medium"
+    },
+    {
+      "name": "money_removed_penalty",
+      "old": "Mức phạt chậm trả là 5.000.000₫ mỗi ngày.",
+      "new": "Không áp dụng mức phạt chậm trả nữa.",
+      "rules": ["ENTITY_REMOVED"],
+      "severity": "low"
+    },
+    {
+      "name": "money_added_cancellation_fee",
+      "old": "Không quy định phí hủy chỗ.",
+      "new": "Phí hủy chỗ là 500.000₫ mỗi lượt đăng ký.",
+      "rules": ["ENTITY_ADDED"],
+      "severity": "low"
+    },
+    {
+      "name": "en_money_changed",
+      "old": "Liability is capped at $1,500.50 per claim.",
+      "new": "Liability is capped at $2,000.00 per claim.",
+      "rules": ["MONEY_CHANGED"],
+      "severity": "medium"
+    },
+    {
+      "name": "formatting_only_demoted_to_info",
+      "old": "Hạn chót: 15/03/2026.",
+      "new": "Hạn chót  15/03/2026!",
+      "rules": [],
+      "severity": "info"
+    },
+    {
+      "name": "keyword_penalty_risk",
+      "old": "Trong trường hợp vi phạm hợp đồng.",
+      "new": "Khi vi phạm, bên B chấm dứt, bồi thường và nộp phạt.",
+      "rules": ["KEYWORD_RISK"],
+      "severity": "low"
+    },
+    {
+      "name": "clause_rewritten_critical",
+      "old": "Phí vi phạm là 1.000.000₫.",
+      "new": "Trường hợp vi phạm, bên B phải bồi thường thiệt hại 2.000.000₫ và hợp đồng chấm dứt.",
+      "rules": ["MONEY_CHANGED", "KEYWORD_RISK"],
+      "severity": "critical"
+    }
   ]
 }

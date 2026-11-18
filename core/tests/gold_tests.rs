@@ -284,6 +284,164 @@ fn gold_alignment_fake() {
 }
 
 // --------------------------------------------------------------------------
+// Phase 4: heuristic enrichment gold corpus (manifest "enrichment_cases").
+// --------------------------------------------------------------------------
+
+/// Text-pair enrichment corpus: every case pins the fired rule ids and the
+/// severity band of `enrich` over a single Modified pair. Guards the
+/// deterministic contract of the heuristic layer (rule set, banding,
+/// label keys, formatting-only demotion).
+#[test]
+fn gold_enrichment_matches_manifest() {
+    let (_config, manifest, _cases) = load_manifest();
+    let entries = manifest["enrichment_cases"]
+        .as_array()
+        .expect("manifest enrichment_cases array");
+    assert!(
+        entries.len() >= 6,
+        "corpus must keep at least 6 enrichment cases"
+    );
+
+    for entry in entries {
+        let name = entry["name"].as_str().expect("enrichment case name");
+        let old = entry["old"].as_str().expect("old text");
+        let new = entry["new"].as_str().expect("new text");
+
+        let (flags, severity) = difflens_core::heuristic::enrich_texts(old, new);
+
+        // Determinism: a second run is byte-identical (flags + band).
+        let (flags2, severity2) = difflens_core::heuristic::enrich_texts(old, new);
+        assert_eq!(
+            serde_json::to_string(&flags).unwrap(),
+            serde_json::to_string(&flags2).unwrap(),
+            "case {name}: rerun must be byte-identical"
+        );
+        assert_eq!(severity, severity2, "case {name}");
+
+        // Severity band as recorded in the manifest.
+        let expected_sev = entry["severity"].as_str().expect("severity band");
+        assert_eq!(
+            format!("{severity:?}").to_lowercase(),
+            expected_sev,
+            "case {name}: severity band"
+        );
+
+        // Fired rule ids exactly as recorded (order-insensitive).
+        let mut got: Vec<&str> = flags.iter().map(|f| f.rule_id.as_str()).collect();
+        got.sort_unstable();
+        let mut want: Vec<&str> = entry["rules"]
+            .as_array()
+            .expect("rules array")
+            .iter()
+            .map(|r| r.as_str().expect("rule id"))
+            .collect();
+        want.sort_unstable();
+        assert_eq!(got, want, "case {name}: fired rules");
+
+        // Every fired flag carries an i18n label key from the exported set.
+        for f in &flags {
+            assert!(
+                difflens_core::ALL_LABEL_KEYS.contains(&f.label_key.as_str()),
+                "case {name}: label key {} not in ALL_LABEL_KEYS",
+                f.label_key
+            );
+        }
+    }
+}
+
+/// Pipeline smoke (phase 4): the full `extract → align → diff → enrich`
+/// round-trip over the gold DOCX fixture pair must report every stage
+/// (including `enrich`) in order, attach severity + an audit entry to every
+/// non-Equal change, fire the EUR money delta, and be byte-identical on
+/// rerun.
+#[test]
+fn pipeline_enrich_stage_reports_and_attaches_audit() {
+    use difflens_core::ChangeKind;
+    use difflens_core::pipeline::run_with_progress;
+
+    let old = gold_dir().join("report_en_docx_old.docx");
+    let new = gold_dir().join("report_en_docx_new.docx");
+
+    let mut stages: Vec<(difflens_core::pipeline::Stage, u8)> = Vec::new();
+    let result = run_with_progress(
+        old.to_str().unwrap(),
+        new.to_str().unwrap(),
+        &FakeHashEmbedder::default(),
+        &mut |stage, percent| {
+            stages.push((stage, percent));
+            Ok(())
+        },
+    )
+    .expect("pipeline runs over gold DOCX fixtures");
+
+    // Progress stream covers all four stages, in pipeline order.
+    let names: Vec<&str> = stages.iter().map(|(s, _)| s.as_str()).collect();
+    let pos = |stage: &str| {
+        names
+            .iter()
+            .position(|s| *s == stage)
+            .unwrap_or_else(|| panic!("stage {stage} not reported"))
+    };
+    let (extract, align, diff, enrich) = (pos("extract"), pos("align"), pos("diff"), pos("enrich"));
+    assert!(
+        extract < align && align < diff && diff < enrich,
+        "stages: {names:?}"
+    );
+    assert!(
+        stages
+            .iter()
+            .any(|(s, p)| *s == difflens_core::pipeline::Stage::Enrich && *p == 100),
+        "enrich must report completion"
+    );
+
+    // Every non-Equal change is enriched: severity band + audit entry, and
+    // the audit entry mirrors the change's severity.
+    let non_equal: Vec<_> = result
+        .changes
+        .iter()
+        .filter(|c| c.kind != ChangeKind::Equal)
+        .collect();
+    assert!(!non_equal.is_empty(), "fixtures must produce changes");
+    assert_eq!(
+        result.audit.len(),
+        non_equal.len(),
+        "one audit entry per non-Equal change"
+    );
+    for change in &non_equal {
+        let severity = change.severity.expect("enrich sets severity");
+        let entry = result
+            .audit
+            .iter()
+            .find(|a| a.change_id == change.id)
+            .expect("audit entry for change");
+        assert_eq!(entry.severity, severity, "audit severity mirrors change");
+    }
+
+    // The EUR cost pair (8.750.000 → 9.120.000 EUR) fired MONEY_CHANGED with
+    // a positive relative delta and its i18n label key.
+    let money = result
+        .changes
+        .iter()
+        .flat_map(|c| c.flags.iter())
+        .find(|f| f.rule_id == "MONEY_CHANGED" && f.detail.as_deref().unwrap_or("").contains("EUR"))
+        .expect("EUR money delta fired on the DOCX fixture pair");
+    assert_eq!(money.label_key, "flag.moneyChanged");
+    assert!(money.delta.unwrap() > 0.0);
+
+    // Determinism: a full pipeline rerun is byte-identical (audit included).
+    let rerun = difflens_core::pipeline::run(
+        old.to_str().unwrap(),
+        new.to_str().unwrap(),
+        &FakeHashEmbedder::default(),
+    )
+    .expect("pipeline rerun");
+    assert_eq!(
+        serde_json::to_string(&result).unwrap(),
+        serde_json::to_string(&rerun).unwrap()
+    );
+}
+
+// --------------------------------------------------------------------------
 // Real e5-small gate (#[ignore]d; the CI embeddings job runs it after
 // scripts/fetch-models.sh --test). Fails loudly when the model is missing.
 // --------------------------------------------------------------------------

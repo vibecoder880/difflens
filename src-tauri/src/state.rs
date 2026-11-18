@@ -192,6 +192,7 @@ mod tests {
             changes: vec![],
             stats: Default::default(),
             embeddings_used: false,
+            audit: Vec::new(),
         };
         state.finish(&id2, result);
         let snap = state.snapshot(&id2).unwrap();

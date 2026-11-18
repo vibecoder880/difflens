@@ -144,7 +144,7 @@ pub enum Severity {
 }
 
 /// One fired heuristic rule, with the evidence trail for audit.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HeuristicFlag {
     /// Stable rule id, e.g. `MONEY_CHANGED`, `DATE_CHANGED`, `TERM_SHORTENED`.
     pub rule_id: String,
@@ -197,6 +197,9 @@ pub struct DiffResult {
     pub stats: DiffStats,
     /// Whether real (ort) embeddings were used for alignment.
     pub embeddings_used: bool,
+    /// Heuristic audit trail: one entry per enriched (non-Equal) change,
+    /// in change order. Empty until the heuristic stage runs.
+    pub audit: Vec<AuditEntry>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

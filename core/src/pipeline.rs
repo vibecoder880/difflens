@@ -1,4 +1,4 @@
-//! Full pipeline: extract → align → diff.
+//! Full pipeline: extract → align → diff → enrich (heuristics).
 //!
 //! [`run`] is the single entry point the Tauri shell calls. The embedder is
 //! injected so the caller controls fake-vs-real (the app picks the real e5
@@ -21,6 +21,7 @@ pub enum Stage {
     Extract,
     Align,
     Diff,
+    Enrich,
 }
 
 impl Stage {
@@ -30,6 +31,7 @@ impl Stage {
             Stage::Extract => "extract",
             Stage::Align => "align",
             Stage::Diff => "diff",
+            Stage::Enrich => "enrich",
         }
     }
 }
@@ -67,9 +69,13 @@ pub fn run_with_progress(
 
     progress(Stage::Diff, 75)?;
     let pairs: Vec<(usize, usize)> = alignment.pairs.iter().map(|p| (p.old, p.new)).collect();
-    let changes = diff_blocks(&old_doc.blocks, &new_doc.blocks, &pairs);
+    let mut changes = diff_blocks(&old_doc.blocks, &new_doc.blocks, &pairs);
     let stats = summarize(&changes);
-    progress(Stage::Diff, 100)?;
+    progress(Stage::Diff, 85)?;
+
+    progress(Stage::Enrich, 90)?;
+    let audit = crate::heuristic::enrich_changes(&mut changes, &old_doc.blocks, &new_doc.blocks);
+    progress(Stage::Enrich, 100)?;
 
     Ok(DiffResult {
         old_path: old_doc.path,
@@ -78,6 +84,7 @@ pub fn run_with_progress(
         changes,
         stats,
         embeddings_used: embedder.uses_model(),
+        audit,
     })
 }
 
