@@ -453,6 +453,8 @@ mod tests {
                     text: " of signing.".into(),
                 },
             ],
+            old_text: None,
+            new_text: None,
             similarity: Some(0.83),
             move_delta: None,
             severity: Some(Severity::High),

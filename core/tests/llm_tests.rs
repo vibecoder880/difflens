@@ -209,6 +209,8 @@ fn prompt_end_to_end_into_mock_stream() {
                 text: "10%".into(),
             },
         ],
+        old_text: None,
+        new_text: None,
         similarity: Some(0.9),
         move_delta: None,
         severity: Some(Severity::Critical),
@@ -386,6 +388,8 @@ fn llm_real_roundtrip() {
         ],
         similarity: Some(0.9),
         move_delta: None,
+        old_text: None,
+        new_text: None,
         severity: Some(Severity::Medium),
         flags: vec![HeuristicFlag {
             rule_id: "MONEY_CHANGED".into(),

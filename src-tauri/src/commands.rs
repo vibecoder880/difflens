@@ -7,8 +7,8 @@
 //! boundaries.
 
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -28,10 +28,15 @@ pub struct ProgressPayload {
 }
 
 /// Start a diff job. Returns the initial snapshot including the job id.
+///
+/// `ocr_enabled`: `None` keeps the default (auto) OCR behavior; `Some(false)`
+/// disables the experimental OCR fallback entirely, `Some(true)` is
+/// equivalent to the default.
 #[tauri::command]
 pub fn run_diff(
     old_path: String,
     new_path: String,
+    ocr_enabled: Option<bool>,
     app: AppHandle,
     state: State<AppState>,
 ) -> Result<JobSnapshot, String> {
@@ -47,6 +52,7 @@ pub fn run_diff(
             &job_id_task,
             &old_path,
             &new_path,
+            ocr_enabled,
             &diff_task,
             cancel,
             |stage, percent| {
@@ -99,9 +105,7 @@ pub fn ocr_status() -> Result<OcrStatus, String> {
     let avail = difflens_core::ocr::detect();
     Ok(OcrStatus {
         available: avail.usable(),
-        binary: avail
-            .binary
-            .map(|b| b.to_string_lossy().into_owned()),
+        binary: avail.binary.map(|b| b.to_string_lossy().into_owned()),
         langs: avail.langs,
         has_vie: avail.has_vie,
     })
@@ -113,18 +117,24 @@ fn execute_job(
     job_id: &str,
     old_path: &str,
     new_path: &str,
+    ocr_enabled: Option<bool>,
     diff: &DiffState,
     cancel: Arc<std::sync::atomic::AtomicBool>,
     mut emit: impl FnMut(&'static str, u8),
 ) {
     let cancelled = || cancel.load(Ordering::SeqCst);
+    // Phase-06: experimental OCR fallback, auto-enabled by default (runs only
+    // when a scanned PDF is detected AND tesseract + vie are installed). The
+    // frontend preference can disable it entirely (`Some(false)`).
+    let mut ocr = difflens_core::ocr::OcrOptions::default();
+    if let Some(enabled) = ocr_enabled {
+        ocr.enabled = enabled;
+    }
     let result = difflens_core::pipeline::run_with_progress(
         old_path,
         new_path,
         difflens_core::pipeline::default_embedder().as_ref(),
-        // Phase-06: experimental OCR fallback, auto-enabled (runs only when
-        // a scanned PDF is detected AND tesseract + vie are installed).
-        &difflens_core::ocr::OcrOptions::default(),
+        &ocr,
         &mut |stage, percent| {
             if cancelled() {
                 return Err(difflens_core::CoreError::Diff("cancelled by user".into()));
@@ -457,7 +467,7 @@ pub fn explain_change(
     state: State<AppState>,
 ) -> Result<String, String> {
     use difflens_core::llm::explain::{
-        ContextBudget, Lang, build_explanation_messages, change_context_from, parse_explanation,
+        build_explanation_messages, change_context_from, parse_explanation, ContextBudget, Lang,
     };
 
     // Resolve the change from the stored diff result.
@@ -618,7 +628,7 @@ mod tests {
         let b = write_temp("b.txt", "# Contract\n\nPayment within 45 days.\n");
 
         let mut events: Vec<(String, u8)> = Vec::new();
-        execute_job(&job_id, &a, &b, &diff, cancel, |stage, percent| {
+        execute_job(&job_id, &a, &b, None, &diff, cancel, |stage, percent| {
             events.push((stage.to_string(), percent));
         });
 
@@ -646,7 +656,7 @@ mod tests {
         let a = write_temp("c.txt", "one\n");
         let b = write_temp("d.txt", "two\n");
 
-        execute_job(&job_id, &a, &b, &diff, cancel, |_, _| {});
+        execute_job(&job_id, &a, &b, None, &diff, cancel, |_, _| {});
         let snap = diff.snapshot(&job_id).unwrap();
         assert_eq!(snap.state, JobState::Cancelled);
     }
@@ -660,17 +670,17 @@ mod tests {
             &job_id,
             "/nonexistent/a.txt",
             "/nonexistent/b.txt",
+            None,
             &diff,
             cancel,
             |_, _| {},
         );
         let snap = diff.snapshot(&job_id).unwrap();
         assert_eq!(snap.state, JobState::Failed);
-        assert!(
-            snap.error
-                .as_deref()
-                .unwrap_or_default()
-                .contains("cannot read")
-        );
+        assert!(snap
+            .error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("cannot read"));
     }
 }

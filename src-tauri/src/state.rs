@@ -11,9 +11,9 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use difflens_core::DiffResult;
 use difflens_core::download::DownloadManager;
 use difflens_core::llm::sidecar::SidecarManager;
+use difflens_core::DiffResult;
 use serde::Serialize;
 
 /// Lifecycle of a diff job.

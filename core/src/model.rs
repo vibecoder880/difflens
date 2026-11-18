@@ -176,6 +176,13 @@ pub struct Change {
     pub new_page: Option<u32>,
     /// Inline word-level diff (present for Modified/Moved pairs).
     pub spans: Vec<DiffSpan>,
+    /// Full old-side block text, carried only for Removed changes (the old
+    /// block has no aligned counterpart, so there are no spans to render).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub old_text: Option<String>,
+    /// Full new-side block text, carried only for Added changes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new_text: Option<String>,
     /// Cosine similarity of the aligned pair (0..1), when computed.
     pub similarity: Option<f32>,
     /// Position delta in points for moved blocks (dx, dy).

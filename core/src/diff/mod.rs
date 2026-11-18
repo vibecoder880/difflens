@@ -131,6 +131,14 @@ fn build_change(
         _ => None,
     };
 
+    // Side-only changes carry their full block text (no spans exist to
+    // render); paired changes keep the text out of the payload entirely.
+    let (old_text, new_text) = match kind {
+        ChangeKind::Added => (None, nb.map(|b| b.text.clone())),
+        ChangeKind::Removed => (ob.map(|b| b.text.clone()), None),
+        _ => (None, None),
+    };
+
     Change {
         id: format!("c{idx}"),
         kind,
@@ -139,6 +147,8 @@ fn build_change(
         old_page: ob.and_then(|b| b.page),
         new_page: nb.and_then(|b| b.page),
         spans,
+        old_text,
+        new_text,
         similarity,
         move_delta,
         // Set by heuristics in a later phase.
@@ -256,6 +266,31 @@ mod tests {
         assert!(changes[1].new_block_ids.is_empty());
         assert_eq!(changes[3].new_block_ids, vec!["b2"]);
         assert!(changes[3].similarity.is_none());
+        // Side-only changes carry the full block text on their side.
+        assert_eq!(changes[1].old_text.as_deref(), Some("removed"));
+        assert!(changes[1].new_text.is_none());
+        assert!(changes[3].old_text.is_none());
+        assert_eq!(changes[3].new_text.as_deref(), Some("added"));
+    }
+
+    #[test]
+    fn paired_changes_omit_side_text() {
+        // Modified/Moved/Equal keep spans and serialize without side text.
+        let old = [block("payment within 30 days")];
+        let new = [block("payment within 45 days")];
+        let changes = diff_blocks(&old, &new, &[(0, 0)]);
+        assert!(changes[0].old_text.is_none());
+        assert!(changes[0].new_text.is_none());
+        assert!(!changes[0].spans.is_empty());
+
+        let json = serde_json::to_string(&changes[0]).unwrap();
+        assert!(!json.contains("old_text"), "json: {json}");
+        assert!(!json.contains("new_text"), "json: {json}");
+
+        let equal_old = [block("same")];
+        let equal_new = [block("same")];
+        let equal = diff_blocks(&equal_old, &equal_new, &[(0, 0)]);
+        assert!(equal[0].old_text.is_none() && equal[0].new_text.is_none());
     }
 
     #[test]

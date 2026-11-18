@@ -166,6 +166,14 @@ mod tests {
         assert_eq!(result.stats.modified, 1);
         assert_eq!(result.stats.added, 1);
         assert!(result.changes[0].id == "c0");
+        // Added changes reach the shell payload with their block text.
+        let added = result
+            .changes
+            .iter()
+            .find(|c| c.kind == crate::model::ChangeKind::Added)
+            .expect("added change present");
+        assert_eq!(added.new_text.as_deref(), Some("Extra clause."));
+        assert!(added.old_text.is_none());
     }
 
     #[test]
