@@ -28,6 +28,11 @@ ort = { version = "=2.0.0-rc.15", optional = true }
 tokenizers = { version = "0.23", optional = true, default-features = false, features = ["onig"] }
 ndarray = { version = "0.16", optional = true }
 
+# Runtime-bound PDFium bindings (library loaded via scripts/fetch-pdfium.sh).
+# Trimmed features: text extraction only — no image/bitmap deps.
+pdfium-render = { version = "0.9.5", default-features = false, features = ["pdfium_latest", "thread_safe"] }
+unicode-normalization = "0.1"
+
 [features]
 default = []
 embeddings-ort = ["ort", "tokenizers", "ndarray"]

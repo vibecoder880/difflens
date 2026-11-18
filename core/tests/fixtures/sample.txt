@@ -1,0 +1,10 @@
+# Report
+
+First paragraph with a short line.
+
+Second paragraph that continues
+on a second physical line.
+
+## Details
+
+Final body paragraph mentioning 100 USD and 2026-01-15.

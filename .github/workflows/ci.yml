@@ -26,6 +26,12 @@ jobs:
         with:
           workspaces: core
 
+      - name: Stage PDFium for pdf extraction tests
+        run: |
+          scripts/fetch-pdfium.sh
+          echo "DIFFLENS_PDFIUM_PATH=$PWD/resources/binaries/pdfium/lib/libpdfium.so" >> "$GITHUB_ENV"
+          echo "DIFFLENS_PDFIUM_STRICT=1" >> "$GITHUB_ENV"
+
       - name: rustfmt
         run: cargo fmt --check -p difflens-core
 
@@ -34,6 +40,11 @@ jobs:
 
       - name: tests (no features; deterministic fake embedder)
         run: cargo test -p difflens-core
+
+      - name: Assert pdf extraction tests actually ran (not skipped)
+        run: |
+          cargo test -p difflens-core --test extract_tests pdf -- --nocapture 2>&1 | tee /tmp/pdf-tests.log
+          grep -q "pdf-extraction-ok" /tmp/pdf-tests.log
 
   embeddings:
     name: Embeddings (ort feature, ubuntu only)
