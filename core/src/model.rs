@@ -204,12 +204,16 @@ pub struct DiffResult {
     pub stats: DiffStats,
     /// Whether real (ort) embeddings were used for alignment.
     pub embeddings_used: bool,
+    /// Whether the experimental OCR fallback contributed any blocks
+    /// (phase-08: surfaced so history rows and reports can flag OCR).
+    #[serde(default)]
+    pub ocr_used: bool,
     /// Heuristic audit trail: one entry per enriched (non-Equal) change,
     /// in change order. Empty until the heuristic stage runs.
     pub audit: Vec<AuditEntry>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct DiffStats {
     pub added: usize,
     pub removed: usize,

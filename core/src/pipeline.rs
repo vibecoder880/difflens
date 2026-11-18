@@ -81,12 +81,17 @@ pub fn run_with_progress(
 
     // Experimental OCR fallback over textless PDF pages (phase 06). Never
     // fails the pipeline; progress maps the OCR callback into 16..=26%.
+    // `ocr_used` = OCR contributed blocks to either side (observed as a
+    // block-count increase; the augmenter only appends blocks it produced).
+    let old_len = old_doc.blocks.len();
+    let new_len = new_doc.blocks.len();
     crate::ocr::augment_with_ocr(&mut old_doc, old_path, ocr, &mut |p| {
         progress(Stage::Ocr, 16 + ((p.min(100) as u16) * 10 / 100) as u8)
     })?;
     crate::ocr::augment_with_ocr(&mut new_doc, new_path, ocr, &mut |p| {
         progress(Stage::Ocr, 16 + ((p.min(100) as u16) * 10 / 100) as u8)
     })?;
+    let ocr_used = old_doc.blocks.len() != old_len || new_doc.blocks.len() != new_len;
 
     progress(Stage::Align, 30)?;
     let alignment: AlignmentResult = align(&old_doc.blocks, &new_doc.blocks, embedder)?;
@@ -109,6 +114,7 @@ pub fn run_with_progress(
         changes,
         stats,
         embeddings_used: embedder.uses_model(),
+        ocr_used,
         audit,
     })
 }
