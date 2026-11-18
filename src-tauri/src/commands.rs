@@ -79,6 +79,34 @@ pub fn cancel_diff(job_id: String, state: State<AppState>) -> Result<bool, Strin
     Ok(state.diff.request_cancel(&job_id))
 }
 
+/// Status snapshot for `ocr_status` (phase 06 settings UI guidance).
+#[derive(Debug, Serialize)]
+pub struct OcrStatus {
+    /// True when tesseract + the Vietnamese traineddata are both usable.
+    pub available: bool,
+    /// Resolved tesseract binary path, when found.
+    pub binary: Option<String>,
+    /// Languages reported by `tesseract --list-langs`.
+    pub langs: Vec<String>,
+    /// Vietnamese traineddata present (required for the OCR path).
+    pub has_vie: bool,
+}
+
+/// Report whether the experimental OCR path can run on this machine.
+/// Never fails — detection degrades to `available: false`.
+#[tauri::command]
+pub fn ocr_status() -> Result<OcrStatus, String> {
+    let avail = difflens_core::ocr::detect();
+    Ok(OcrStatus {
+        available: avail.usable(),
+        binary: avail
+            .binary
+            .map(|b| b.to_string_lossy().into_owned()),
+        langs: avail.langs,
+        has_vie: avail.has_vie,
+    })
+}
+
 /// The synchronous job body — runs on the async runtime and is testable
 /// headless (no `AppHandle` needed; events go through the `emit` closure).
 fn execute_job(
@@ -94,6 +122,9 @@ fn execute_job(
         old_path,
         new_path,
         difflens_core::pipeline::default_embedder().as_ref(),
+        // Phase-06: experimental OCR fallback, auto-enabled (runs only when
+        // a scanned PDF is detected AND tesseract + vie are installed).
+        &difflens_core::ocr::OcrOptions::default(),
         &mut |stage, percent| {
             if cancelled() {
                 return Err(difflens_core::CoreError::Diff("cancelled by user".into()));

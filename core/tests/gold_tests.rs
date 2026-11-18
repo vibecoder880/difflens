@@ -367,6 +367,7 @@ fn pipeline_enrich_stage_reports_and_attaches_audit() {
         old.to_str().unwrap(),
         new.to_str().unwrap(),
         &FakeHashEmbedder::default(),
+        &difflens_core::ocr::OcrOptions::default(),
         &mut |stage, percent| {
             stages.push((stage, percent));
             Ok(())

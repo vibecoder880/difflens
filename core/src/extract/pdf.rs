@@ -62,8 +62,8 @@ const PARAGRAPH_LINE_FACTOR: f32 = 1.6;
 /// Maximum left-edge jump (fraction of line height) within one paragraph.
 const PARAGRAPH_INDENT_FACTOR: f32 = 2.0;
 /// Fraction of textless pages above which the document is flagged as
-/// possibly scanned.
-const SCANNED_PAGE_RATIO: f32 = 0.3;
+/// possibly scanned (Phase 2) and the OCR fallback may engage (Phase 6).
+pub(crate) const SCANNED_PAGE_RATIO: f32 = 0.3;
 
 /// Extract a PDF from disk.
 pub fn extract_pdf(path: &str) -> CoreResult<DocumentModel> {
@@ -72,15 +72,58 @@ pub fn extract_pdf(path: &str) -> CoreResult<DocumentModel> {
     Ok(super::build_model(path, DocFormat::Pdf, parts))
 }
 
-pub(crate) fn extract_pdf_bytes(_path: &str, bytes: &[u8]) -> CoreResult<ExtractedParts> {
-    let loaded =
-        pdfium_loader::load().map_err(|e| CoreError::Extraction(format!("pdfium loader: {e}")))?;
-    let document = loaded
-        .pdfium
-        .load_pdf_from_byte_slice(bytes, None)
-        .map_err(|e| CoreError::Extraction(format!("failed to open pdf: {e}")))?;
+/// Bind the runtime PDFium library (shared by extraction and the Phase-06
+/// OCR rasterizer, which renders the same document with the same loader).
+/// Returns the binding plus any loader warnings (e.g. system-library
+/// fallback), which extraction must keep propagating.
+pub(crate) fn bind_pdfium() -> CoreResult<(pdfium_render::prelude::Pdfium, Vec<String>)> {
+    pdfium_loader::load()
+        .map(|loaded| (loaded.pdfium, loaded.warnings))
+        .map_err(|e| CoreError::Extraction(format!("pdfium loader: {e}")))
+}
 
-    let mut warnings = loaded.warnings;
+/// Open a PDF from bytes on a bound PDFium instance. The returned document
+/// borrows the bytes and the binding (both must outlive it).
+pub(crate) fn open_pdf<'a>(
+    pdfium: &'a pdfium_render::prelude::Pdfium,
+    bytes: &'a [u8],
+) -> CoreResult<pdfium_render::prelude::PdfDocument<'a>> {
+    pdfium
+        .load_pdf_from_byte_slice(bytes, None)
+        .map_err(|e| CoreError::Extraction(format!("failed to open pdf: {e}")))
+}
+
+/// Enumerate the pages with no usable text layer (1-based page numbers)
+/// plus the total page count. Phase-06 OCR fallback uses this to decide
+/// which pages to rasterize, with the same empty-text-layer criterion the
+/// extractor applies when warning about scanned PDFs.
+pub(crate) fn scan_textless_pages(path: &str) -> CoreResult<(Vec<u32>, u32)> {
+    let bytes = read_file(path)?;
+    let (pdfium, _) = bind_pdfium()?;
+    let document = open_pdf(&pdfium, &bytes)?;
+    let page_count = document.pages().len();
+    let mut textless = Vec::new();
+    for page_index in 0..page_count {
+        let page = document
+            .pages()
+            .get(page_index)
+            .map_err(|e| CoreError::Extraction(format!("page {page_index} unreadable: {e}")))?;
+        let has_text = page
+            .text()
+            .map(|t| !collect_chars(&t).is_empty())
+            .unwrap_or(false);
+        if !has_text {
+            textless.push(page_index as u32 + 1);
+        }
+    }
+    Ok((textless, page_count as u32))
+}
+
+pub(crate) fn extract_pdf_bytes(_path: &str, bytes: &[u8]) -> CoreResult<ExtractedParts> {
+    let (pdfium, loader_warnings) = bind_pdfium()?;
+    let document = open_pdf(&pdfium, bytes)?;
+
+    let mut warnings = loader_warnings;
     let page_count = document.pages().len();
     let mut blocks: Vec<Block> = Vec::new();
     let mut textless_pages: u32 = 0;

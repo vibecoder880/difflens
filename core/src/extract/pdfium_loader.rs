@@ -94,7 +94,20 @@ pub fn load() -> Result<LoadedPdfium, String> {
 }
 
 fn bind(path: &std::path::Path, warnings: Vec<String>) -> Result<LoadedPdfium, String> {
-    let bindings = Pdfium::bind_to_library(path).map_err(|e| e.to_string())?;
+    let bindings = match Pdfium::bind_to_library(path) {
+        Ok(bindings) => bindings,
+        // pdfium-render keeps one bindings instance per thread; a second
+        // load() on the same thread (the Phase-06 OCR fallback re-opens the
+        // same document after extraction) must reuse it rather than fail —
+        // it is the same staged library in every resolution order.
+        Err(PdfiumError::PdfiumLibraryBindingsAlreadyInitialized) => {
+            return Ok(LoadedPdfium {
+                pdfium: Pdfium::default(),
+                warnings,
+            });
+        }
+        Err(e) => return Err(e.to_string()),
+    };
     Ok(LoadedPdfium {
         pdfium: Pdfium::new(bindings),
         warnings,

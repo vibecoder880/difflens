@@ -10,7 +10,9 @@
 
 mod docx;
 pub mod normalize;
-mod pdf;
+// `pub(crate)`: the Phase-06 OCR fallback shares this module's pdfium
+// binding and textless-page scan.
+pub(crate) mod pdf;
 mod pdfium_loader;
 mod pptx;
 mod txt;

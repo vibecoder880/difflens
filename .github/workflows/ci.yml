@@ -32,6 +32,14 @@ jobs:
           echo "DIFFLENS_PDFIUM_PATH=$PWD/resources/binaries/pdfium/lib/libpdfium.so" >> "$GITHUB_ENV"
           echo "DIFFLENS_PDFIUM_STRICT=1" >> "$GITHUB_ENV"
 
+      - name: Install Tesseract for OCR e2e tests (phase 06)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tesseract-ocr tesseract-ocr-vie
+          tesseract --version | head -1
+          tesseract --list-langs | grep -q vie
+          echo "DIFFLENS_OCR_STRICT=1" >> "$GITHUB_ENV"
+
       - name: rustfmt
         run: cargo fmt --check -p difflens-core
 
@@ -40,6 +48,11 @@ jobs:
 
       - name: tests (no features; deterministic fake embedder)
         run: cargo test -p difflens-core
+
+      - name: OCR e2e (ignored locally, runs here)
+        run: |
+          cargo test -p difflens-core --test ocr_tests -- --ignored --nocapture 2>&1 | tee /tmp/ocr-tests.log
+          grep -q "ocr-ci-ok" /tmp/ocr-tests.log
 
       - name: Assert pdf extraction tests actually ran (not skipped)
         run: |

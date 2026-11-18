@@ -14,11 +14,15 @@ use crate::embeddings::Embedder;
 use crate::error::{CoreError, CoreResult};
 use crate::extract::extract;
 use crate::model::{DiffResult, DocumentModel};
+use crate::ocr::OcrOptions;
 
 /// Pipeline stages for progress reporting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stage {
     Extract,
+    /// Experimental OCR fallback over scanned pages (phase 06; emitted
+    /// between extract and align when the OCR path engages).
+    Ocr,
     Align,
     Diff,
     Enrich,
@@ -29,6 +33,7 @@ impl Stage {
     pub fn as_str(&self) -> &'static str {
         match self {
             Stage::Extract => "extract",
+            Stage::Ocr => "ocr",
             Stage::Align => "align",
             Stage::Diff => "diff",
             Stage::Enrich => "enrich",
@@ -42,19 +47,30 @@ pub type ProgressFn<'a> = dyn FnMut(Stage, u8) -> CoreResult<()> + 'a;
 
 /// Diff two documents with the given embedder.
 pub fn run(old_path: &str, new_path: &str, embedder: &dyn Embedder) -> CoreResult<DiffResult> {
-    run_with_progress(old_path, new_path, embedder, &mut |_, _| Ok(()))
+    run_with_progress(
+        old_path,
+        new_path,
+        embedder,
+        &OcrOptions::default(),
+        &mut |_, _| Ok(()),
+    )
 }
 
 /// [`run`] with progress callbacks (used by the shell's job runner).
+///
+/// `ocr` controls the experimental OCR fallback (phase 06): default
+/// enables *auto* mode, where suspected-scanned PDFs gain OCR blocks only
+/// when a user-installed Tesseract with Vietnamese data is detectable.
 pub fn run_with_progress(
     old_path: &str,
     new_path: &str,
     embedder: &dyn Embedder,
+    ocr: &OcrOptions,
     progress: &mut ProgressFn<'_>,
 ) -> CoreResult<DiffResult> {
     progress(Stage::Extract, 2)?;
-    let old_doc: DocumentModel = extract(old_path)?;
-    let new_doc: DocumentModel = extract(new_path)?;
+    let mut old_doc: DocumentModel = extract(old_path)?;
+    let mut new_doc: DocumentModel = extract(new_path)?;
     if old_doc.format != new_doc.format {
         return Err(CoreError::Diff(format!(
             "format mismatch: {} is {:?} but {} is {:?}",
@@ -62,6 +78,15 @@ pub fn run_with_progress(
         )));
     }
     progress(Stage::Extract, 15)?;
+
+    // Experimental OCR fallback over textless PDF pages (phase 06). Never
+    // fails the pipeline; progress maps the OCR callback into 16..=26%.
+    crate::ocr::augment_with_ocr(&mut old_doc, old_path, ocr, &mut |p| {
+        progress(Stage::Ocr, 16 + ((p.min(100) as u16) * 10 / 100) as u8)
+    })?;
+    crate::ocr::augment_with_ocr(&mut new_doc, new_path, ocr, &mut |p| {
+        progress(Stage::Ocr, 16 + ((p.min(100) as u16) * 10 / 100) as u8)
+    })?;
 
     progress(Stage::Align, 30)?;
     let alignment: AlignmentResult = align(&old_doc.blocks, &new_doc.blocks, embedder)?;

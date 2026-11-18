@@ -22,6 +22,7 @@ pub fn run() {
             commands::run_diff,
             commands::get_diff,
             commands::cancel_diff,
+            commands::ocr_status,
             commands::llm_status,
             commands::llm_install_server,
             commands::llm_download_model,
