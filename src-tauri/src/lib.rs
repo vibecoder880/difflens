@@ -18,6 +18,29 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .manage(state::AppState::default())
+        .setup(|app| {
+            // Phase-08: open the session history store eagerly so every
+            // finished diff persists. A failure disables history without
+            // blocking the app (commands re-open lazily as a fallback).
+            let dir = app
+                .path()
+                .app_data_dir()
+                .map_err(|e| format!("app data dir: {e}"))?;
+            if let Err(e) = std::fs::create_dir_all(&dir) {
+                tracing::warn!("cannot create app data dir {dir:?}: {e}");
+                return Ok(());
+            }
+            match difflens_core::store::Store::open(&dir.join("difflens.sqlite3")) {
+                Ok(store) => {
+                    *app.state::<state::AppState>()
+                        .store
+                        .lock()
+                        .expect("store lock") = Some(store);
+                }
+                Err(e) => tracing::warn!("session store unavailable, history disabled: {e}"),
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::run_diff,
             commands::get_diff,
@@ -28,6 +51,10 @@ pub fn run() {
             commands::llm_download_model,
             commands::explain_change,
             commands::llm_cancel,
+            commands::list_sessions,
+            commands::get_session,
+            commands::delete_session,
+            commands::export_report,
         ])
         .build(tauri::generate_context!())
         .expect("error while building DiffLens")

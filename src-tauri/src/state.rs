@@ -11,9 +11,10 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
+use difflens_core::DiffResult;
 use difflens_core::download::DownloadManager;
 use difflens_core::llm::sidecar::SidecarManager;
-use difflens_core::DiffResult;
+use difflens_core::store::Store;
 use serde::Serialize;
 
 /// Lifecycle of a diff job.
@@ -64,6 +65,11 @@ impl JobSnapshot {
 /// Shared job map handed to the spawned pipeline task.
 pub type JobMap = Arc<Mutex<HashMap<String, JobRecord>>>;
 
+/// Lazily-opened session store handle (phase-08). `None` until
+/// `setup` opens `app_data_dir/difflens.sqlite3`; every finished diff
+/// job is persisted there (fire-and-forget).
+pub type StoreHandle = Arc<Mutex<Option<Store>>>;
+
 /// Root application state managed by Tauri. `diff` is Arc-shared so the
 /// spawned job task can own a handle while commands keep theirs.
 #[derive(Default)]
@@ -73,6 +79,8 @@ pub struct AppState {
     /// kills its llama-server child on drop; the app also calls
     /// `shutdown()` on `RunEvent::Exit` for a deterministic teardown.
     pub llm: Arc<LlmState>,
+    /// Session history store (phase-08), opened at app start.
+    pub store: StoreHandle,
 }
 
 /// LLM feature state: download jobs, one active sidecar, streaming
@@ -262,6 +270,7 @@ mod tests {
             changes: vec![],
             stats: Default::default(),
             embeddings_used: false,
+            ocr_used: false,
             audit: Vec::new(),
         };
         state.finish(&id2, result);

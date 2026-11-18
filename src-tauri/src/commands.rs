@@ -7,13 +7,16 @@
 //! boundaries.
 
 use std::path::PathBuf;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
-use crate::state::{AppState, DiffState, JobSnapshot, JobState};
+use difflens_core::model::DiffResult;
+use difflens_core::store::{NewSession, SessionSummary, Store, StoredSession};
+
+use crate::state::{AppState, DiffState, JobSnapshot, JobState, StoreHandle};
 
 /// Event name for progress updates. Payload: [`ProgressPayload`]
 /// (job id + stage + percent; stages: extract/align/diff/done).
@@ -47,6 +50,7 @@ pub fn run_diff(
     let job_id_task = job_id.clone();
     let app_task = app.clone();
     let diff_task = state.diff.clone();
+    let store_task = state.store.clone();
     tauri::async_runtime::spawn(async move {
         execute_job(
             &job_id_task,
@@ -55,6 +59,7 @@ pub fn run_diff(
             ocr_enabled,
             &diff_task,
             cancel,
+            Some(&store_task),
             |stage, percent| {
                 let _ = app_task.emit(
                     PROGRESS_EVENT,
@@ -73,9 +78,247 @@ pub fn run_diff(
 }
 
 /// Fetch the current snapshot (status + result) of a diff job.
+///
+/// Ids in the `session-<store id>` namespace are hydrated from the
+/// persisted history (phase-08): the returned snapshot is `done` with the
+/// stored `DiffResult`, so the existing `/diff/:jobId` view works
+/// unchanged for past sessions.
 #[tauri::command]
-pub fn get_diff(job_id: String, state: State<AppState>) -> Result<Option<JobSnapshot>, String> {
-    Ok(state.diff.snapshot(&job_id))
+pub fn get_diff(
+    job_id: String,
+    app: AppHandle,
+    state: State<AppState>,
+) -> Result<Option<JobSnapshot>, String> {
+    if let Some(snapshot) = state.diff.snapshot(&job_id) {
+        return Ok(Some(snapshot));
+    }
+    if let Some(store_id) = job_id.strip_prefix("session-") {
+        return session_snapshot(&app, store_id, &job_id);
+    }
+    Ok(None)
+}
+
+/// Look up one stored session through the app state store.
+fn lookup_stored(app: &AppHandle, store_id: &str) -> Result<Option<StoredSession>, String> {
+    let cell = app.state::<AppState>().store.clone();
+    let guard = cell.lock().map_err(|e| e.to_string())?;
+    match guard.as_ref() {
+        Some(db) => db.get_session(store_id).map_err(|e| e.to_string()),
+        None => Ok(None),
+    }
+}
+
+/// Build a done snapshot from a stored session row (`result` is `None` for
+/// corrupt rows — the UI then shows its not-found state).
+fn session_snapshot(
+    app: &AppHandle,
+    store_id: &str,
+    route_id: &str,
+) -> Result<Option<JobSnapshot>, String> {
+    Ok(lookup_stored(app, store_id)?.map(|session| JobSnapshot {
+        job_id: route_id.to_string(),
+        state: JobState::Done,
+        stage: "done".into(),
+        percent: 100,
+        error: None,
+        result: session.result,
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Phase-08: session history persistence + report export.
+// ---------------------------------------------------------------------------
+
+/// Current wall-clock time in epoch milliseconds (shell layer only — core
+/// receives timestamps explicitly so it stays deterministic).
+pub fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+/// Persist a finished diff result (fire-and-forget): failures log a
+/// warning and never fail the job.
+fn persist_session(
+    store: &StoreHandle,
+    job_id: &str,
+    old_path: &str,
+    new_path: &str,
+    result: &DiffResult,
+) {
+    let guard = match store.lock() {
+        Ok(guard) => guard,
+        Err(e) => {
+            tracing::warn!("session store lock poisoned; skip persist {job_id}: {e}");
+            return;
+        }
+    };
+    let Some(db) = guard.as_ref() else {
+        // Store never opened (setup failed) — history disabled.
+        return;
+    };
+    let record = NewSession {
+        id: job_id.to_string(),
+        created_at: now_ms(),
+        old_path: old_path.to_string(),
+        new_path: new_path.to_string(),
+        format: result.format,
+        stats: result.stats.clone(),
+        embeddings_used: result.embeddings_used,
+        ocr_used: result.ocr_used,
+        result_json: match serde_json::to_string(result) {
+            Ok(json) => json,
+            Err(e) => {
+                tracing::warn!("session {job_id}: serialize result failed: {e}");
+                return;
+            }
+        },
+    };
+    if let Err(e) = db.insert_session(&record) {
+        tracing::warn!("session persistence failed for {job_id}: {e}");
+    }
+}
+
+/// Run `f` with the session store, opening it on first use (the app setup
+/// opens it eagerly; this is the fallback for headless/tool paths).
+fn with_store<T>(
+    app: &AppHandle,
+    f: impl FnOnce(&Store) -> Result<T, String>,
+) -> Result<T, String> {
+    let cell = app.state::<AppState>().store.clone();
+    let mut guard = cell.lock().map_err(|e| e.to_string())?;
+    if guard.is_none() {
+        let dir = app
+            .path()
+            .app_data_dir()
+            .map_err(|e| format!("app data dir: {e}"))?;
+        std::fs::create_dir_all(&dir).map_err(|e| format!("create app data dir: {e}"))?;
+        *guard = Some(Store::open(&dir.join("difflens.sqlite3")).map_err(|e| e.to_string())?);
+    }
+    f(guard.as_ref().expect("store initialized above"))
+}
+
+/// Paged session summaries for the history list (newest first).
+#[tauri::command]
+pub fn list_sessions(
+    limit: u32,
+    offset: u32,
+    app: AppHandle,
+) -> Result<Vec<SessionSummary>, String> {
+    with_store(&app, |db| {
+        db.list_sessions(limit, offset).map_err(|e| e.to_string())
+    })
+}
+
+/// Full stored session (with deserialized result); `None` for unknown ids.
+#[tauri::command]
+pub fn get_session(session_id: String, app: AppHandle) -> Result<Option<StoredSession>, String> {
+    with_store(&app, |db| {
+        db.get_session(&session_id).map_err(|e| e.to_string())
+    })
+}
+
+/// Delete one stored session; `true` when a row was removed.
+#[tauri::command]
+pub fn delete_session(session_id: String, app: AppHandle) -> Result<bool, String> {
+    with_store(&app, |db| {
+        db.delete_session(&session_id).map_err(|e| e.to_string())
+    })
+}
+
+/// Render a report for a live job (`job-*`, in memory) or a persisted
+/// session (`session-*`, store) and write it to `target_path` (chosen by
+/// the frontend via the native save dialog). Returns bytes written.
+#[tauri::command]
+pub fn export_report(
+    id: String,
+    format: String,
+    target_path: String,
+    lang: Option<String>,
+    app: AppHandle,
+    state: State<AppState>,
+) -> Result<u64, String> {
+    // Resolve (result, created_at): live job first, then stored session.
+    let (result, created_at) = if let Some(snapshot) = state.diff.snapshot(&id) {
+        let result = snapshot
+            .result
+            .ok_or_else(|| format!("diff job {id} has no result yet"))?;
+        (result, now_ms())
+    } else if let Some(store_id) = id.strip_prefix("session-") {
+        let session = lookup_stored(&app, store_id)?
+            .ok_or_else(|| format!("unknown session {store_id:?}"))?;
+        let created_at = session.created_at;
+        let result = session
+            .result
+            .ok_or_else(|| format!("stored result for {store_id} is corrupt"))?;
+        (result, created_at)
+    } else {
+        return Err(format!("unknown job or session {id:?}"));
+    };
+
+    let lang = difflens_core::report::ReportLang::from_tag(lang.as_deref().unwrap_or("en"));
+    let version = app.package_info().version.to_string();
+    write_report(
+        &result,
+        &id,
+        created_at,
+        lang,
+        &version,
+        &format,
+        &target_path,
+    )
+}
+
+/// Format + validate + write the report file (no Tauri types — headless
+/// testable). Returns bytes written.
+fn write_report(
+    result: &DiffResult,
+    id: &str,
+    created_at: i64,
+    lang: difflens_core::report::ReportLang,
+    version: &str,
+    format: &str,
+    target_path: &str,
+) -> Result<u64, String> {
+    let input = difflens_core::report::ReportInput {
+        id,
+        result,
+        created_at,
+        lang,
+        version,
+    };
+    let content = match format {
+        "html" => difflens_core::report::html::render_html(&input),
+        "md" | "markdown" => difflens_core::report::markdown::render_markdown(&input),
+        other => {
+            return Err(format!(
+                "unknown report format {other:?} (expected \"html\" or \"md\")"
+            ));
+        }
+    };
+    // Path validation: never a directory; parent must exist (the dialog
+    // hands us a user-chosen path in an existing folder).
+    let target = PathBuf::from(target_path);
+    if target.is_dir() {
+        return Err(format!("target path is a directory: {target_path}"));
+    }
+    let parent_missing = match target.parent() {
+        None => false, // bare file name in the current directory
+        Some(parent) => !parent.as_os_str().is_empty() && !parent.is_dir(),
+    };
+    if parent_missing {
+        return Err(format!(
+            "target directory does not exist: {}",
+            target
+                .parent()
+                .and_then(|p| p.to_str())
+                .unwrap_or(target_path)
+        ));
+    }
+    let bytes = content.into_bytes();
+    std::fs::write(&target, &bytes).map_err(|e| format!("write report: {e}"))?;
+    Ok(bytes.len() as u64)
 }
 
 /// Request cancelation. `true` when a running job was found and flagged;
@@ -113,6 +356,8 @@ pub fn ocr_status() -> Result<OcrStatus, String> {
 
 /// The synchronous job body — runs on the async runtime and is testable
 /// headless (no `AppHandle` needed; events go through the `emit` closure).
+/// `store` (phase-08) receives the finished result for history persistence
+/// (fire-and-forget; `None` disables persistence, e.g. in tests).
 fn execute_job(
     job_id: &str,
     old_path: &str,
@@ -120,6 +365,7 @@ fn execute_job(
     ocr_enabled: Option<bool>,
     diff: &DiffState,
     cancel: Arc<std::sync::atomic::AtomicBool>,
+    store: Option<&StoreHandle>,
     mut emit: impl FnMut(&'static str, u8),
 ) {
     let cancelled = || cancel.load(Ordering::SeqCst);
@@ -146,7 +392,12 @@ fn execute_job(
     );
 
     match result {
-        Ok(result) => diff.finish(job_id, result),
+        Ok(result) => {
+            if let Some(store) = store {
+                persist_session(store, job_id, old_path, new_path, &result);
+            }
+            diff.finish(job_id, result);
+        }
         Err(e) => {
             if cancelled() {
                 diff.mark_cancelled(job_id);
@@ -467,20 +718,27 @@ pub fn explain_change(
     state: State<AppState>,
 ) -> Result<String, String> {
     use difflens_core::llm::explain::{
-        build_explanation_messages, change_context_from, parse_explanation, ContextBudget, Lang,
+        ContextBudget, Lang, build_explanation_messages, change_context_from, parse_explanation,
     };
 
-    // Resolve the change from the stored diff result.
-    let diff = state.diff.clone();
-    let snapshot = diff
-        .snapshot(&diff_job_id)
-        .ok_or_else(|| format!("unknown diff job {diff_job_id:?}"))?;
-    let result = snapshot.result.ok_or_else(|| {
-        format!(
-            "diff job {diff_job_id:?} has no result yet (state {:?})",
-            snapshot.state
-        )
-    })?;
+    // Resolve the change from the stored diff result: live job first, then
+    // persisted-session namespace (`session-<store id>`, phase-08).
+    let result = if let Some(snapshot) = state.diff.snapshot(&diff_job_id) {
+        snapshot.result.ok_or_else(|| {
+            format!(
+                "diff job {diff_job_id:?} has no result yet (state {:?})",
+                snapshot.state
+            )
+        })?
+    } else if let Some(store_id) = diff_job_id.strip_prefix("session-") {
+        let stored = lookup_stored(&app, store_id)?
+            .ok_or_else(|| format!("unknown session {store_id:?}"))?;
+        stored
+            .result
+            .ok_or_else(|| format!("stored result for {store_id} is corrupt"))?
+    } else {
+        return Err(format!("unknown diff job {diff_job_id:?}"));
+    };
     let change = result
         .changes
         .iter()
@@ -628,9 +886,18 @@ mod tests {
         let b = write_temp("b.txt", "# Contract\n\nPayment within 45 days.\n");
 
         let mut events: Vec<(String, u8)> = Vec::new();
-        execute_job(&job_id, &a, &b, None, &diff, cancel, |stage, percent| {
-            events.push((stage.to_string(), percent));
-        });
+        execute_job(
+            &job_id,
+            &a,
+            &b,
+            None,
+            &diff,
+            cancel,
+            None,
+            |stage, percent| {
+                events.push((stage.to_string(), percent));
+            },
+        );
 
         let snap = diff.snapshot(&job_id).expect("job present");
         assert_eq!(snap.state, JobState::Done);
@@ -656,7 +923,7 @@ mod tests {
         let a = write_temp("c.txt", "one\n");
         let b = write_temp("d.txt", "two\n");
 
-        execute_job(&job_id, &a, &b, None, &diff, cancel, |_, _| {});
+        execute_job(&job_id, &a, &b, None, &diff, cancel, None, |_, _| {});
         let snap = diff.snapshot(&job_id).unwrap();
         assert_eq!(snap.state, JobState::Cancelled);
     }
@@ -673,14 +940,147 @@ mod tests {
             None,
             &diff,
             cancel,
+            None,
             |_, _| {},
         );
         let snap = diff.snapshot(&job_id).unwrap();
         assert_eq!(snap.state, JobState::Failed);
-        assert!(snap
-            .error
-            .as_deref()
-            .unwrap_or_default()
-            .contains("cannot read"));
+        assert!(
+            snap.error
+                .as_deref()
+                .unwrap_or_default()
+                .contains("cannot read")
+        );
+    }
+
+    #[test]
+    fn finished_job_persists_session_with_result() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(std::sync::Mutex::new(Some(
+            difflens_core::store::Store::open(&dir.path().join("h.sqlite3")).unwrap(),
+        )));
+        let diff = DiffState::default();
+        let job_id = diff.next_job_id();
+        let cancel = diff.insert_running(&job_id);
+        let a = write_temp("persist-a.txt", "# Contract\n\nPayment within 30 days.\n");
+        let b = write_temp("persist-b.txt", "# Contract\n\nPayment within 45 days.\n");
+
+        execute_job(
+            &job_id,
+            &a,
+            &b,
+            None,
+            &diff,
+            cancel,
+            Some(&store),
+            |_, _| {},
+        );
+        assert_eq!(diff.snapshot(&job_id).unwrap().state, JobState::Done);
+
+        let guard = store.lock().unwrap();
+        let db = guard.as_ref().unwrap();
+        let session = db.get_session(&job_id).unwrap().expect("session stored");
+        assert_eq!(session.id, job_id);
+        assert!(session.created_at > 0);
+        assert_eq!(session.old_path, a);
+        assert_eq!(session.new_path, b);
+        let result = session.result.expect("result deserializes");
+        assert_eq!(result.stats.modified, 1);
+        assert!(!result.ocr_used);
+        // Listed newest-first with a summary row.
+        let listed = db.list_sessions(10, 0).unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].id, job_id);
+    }
+
+    #[test]
+    fn unopened_store_never_fails_the_job() {
+        // History disabled (store not opened): persist is skipped silently
+        // and the job still completes.
+        let store: StoreHandle = Arc::new(std::sync::Mutex::new(None));
+        let diff = DiffState::default();
+        let job_id = diff.next_job_id();
+        let cancel = diff.insert_running(&job_id);
+        let a = write_temp("nofail-a.txt", "one\n");
+        let b = write_temp("nofail-b.txt", "two\n");
+
+        execute_job(
+            &job_id,
+            &a,
+            &b,
+            None,
+            &diff,
+            cancel,
+            Some(&store),
+            |_, _| {},
+        );
+        assert_eq!(diff.snapshot(&job_id).unwrap().state, JobState::Done);
+    }
+
+    #[test]
+    fn write_report_renders_html_and_md_to_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = write_temp("report-a.txt", "# Contract\n\nPayment within 30 days.\n");
+        let b = write_temp("report-b.txt", "# Contract\n\nPayment within 45 days.\n");
+        let diff =
+            difflens_core::pipeline::run(&a, &b, &*difflens_core::pipeline::default_embedder())
+                .unwrap();
+
+        let html_path = dir.path().join("report.html");
+        let written = write_report(
+            &diff,
+            "job-x",
+            1_700_000_000_000,
+            difflens_core::report::ReportLang::En,
+            "1.0.0",
+            "html",
+            html_path.to_str().unwrap(),
+        )
+        .unwrap();
+        let html = std::fs::read_to_string(&html_path).unwrap();
+        assert_eq!(written, html.len() as u64);
+        assert!(html.contains("Payment within"));
+        assert!(html.contains("DiffLens 1.0.0"));
+        assert!(!html.contains("<script"));
+
+        let md_path = dir.path().join("report.md");
+        write_report(
+            &diff,
+            "job-x",
+            1_700_000_000_000,
+            difflens_core::report::ReportLang::En,
+            "1.0.0",
+            "md",
+            md_path.to_str().unwrap(),
+        )
+        .unwrap();
+        let md = std::fs::read_to_string(&md_path).unwrap();
+        assert!(md.contains("# Document comparison report"));
+
+        // Validation: unknown format and missing parent dir both error.
+        assert!(
+            write_report(
+                &diff,
+                "job-x",
+                0,
+                difflens_core::report::ReportLang::En,
+                "1.0.0",
+                "pdf",
+                html_path.to_str().unwrap()
+            )
+            .is_err()
+        );
+        assert!(
+            write_report(
+                &diff,
+                "job-x",
+                0,
+                difflens_core::report::ReportLang::En,
+                "1.0.0",
+                "html",
+                dir.path().join("nope/report.html").to_str().unwrap(),
+            )
+            .is_err()
+        );
     }
 }
