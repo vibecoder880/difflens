@@ -29,13 +29,6 @@ export function getDownload(jobId: string | null): LlmDownloadPayload | null {
   return jobs.get(jobId) ?? null;
 }
 
-export function activeDownloadCount(): number {
-  let count = 0;
-  for (const job of jobs.values()) {
-    if (job.state === "running") count += 1;
-  }
-  return count;
-}
 
 /** React binding for one job's latest payload. */
 export function useDownloadJob(jobId: string | null): LlmDownloadPayload | null {

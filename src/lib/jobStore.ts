@@ -16,10 +16,6 @@ export function setLastJob(jobId: string): void {
   emit();
 }
 
-export function getLastJob(): string | null {
-  return lastJobId;
-}
-
 function subscribe(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
