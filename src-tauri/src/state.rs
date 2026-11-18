@@ -1,5 +1,5 @@
 //! Shared application state: diff job registry with cancelation flags and
-//! generation counter.
+//! generation counter, plus the LLM sidecar/download managers.
 //!
 //! Thin bookkeeping only — all pipeline logic lives in `difflens-core`.
 //! `run_diff` allocates a job id (`job-{generation}`), spawns the pipeline
@@ -12,6 +12,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use difflens_core::DiffResult;
+use difflens_core::download::DownloadManager;
+use difflens_core::llm::sidecar::SidecarManager;
 use serde::Serialize;
 
 /// Lifecycle of a diff job.
@@ -67,6 +69,74 @@ pub type JobMap = Arc<Mutex<HashMap<String, JobRecord>>>;
 #[derive(Default)]
 pub struct AppState {
     pub diff: Arc<DiffState>,
+    /// LLM sidecar + download managers (phase-05). The sidecar manager
+    /// kills its llama-server child on drop; the app also calls
+    /// `shutdown()` on `RunEvent::Exit` for a deterministic teardown.
+    pub llm: Arc<LlmState>,
+}
+
+/// LLM feature state: download jobs, one active sidecar, streaming
+/// explain jobs with cancel flags.
+pub struct LlmState {
+    /// Model/server download jobs (core `DownloadManager`).
+    pub downloads: Arc<DownloadManager>,
+    /// At most one llama-server child, with same-model reuse.
+    pub sidecar: Arc<SidecarManager>,
+    /// Explain (token-streaming) jobs with cancel flags.
+    pub explain: Arc<ExplainJobs>,
+}
+
+impl Default for LlmState {
+    fn default() -> Self {
+        Self {
+            downloads: Arc::new(DownloadManager::new()),
+            sidecar: Arc::new(SidecarManager::new()),
+            explain: Arc::new(ExplainJobs::default()),
+        }
+    }
+}
+
+/// Registry of running explain jobs (`explain-<n>`), mirroring DiffState's
+/// job pattern.
+#[derive(Default)]
+pub struct ExplainJobs {
+    generation: AtomicU64,
+    jobs: Mutex<HashMap<String, Arc<AtomicBool>>>,
+}
+
+impl ExplainJobs {
+    /// Allocate the next explain job id and its cancel flag.
+    pub fn insert_running(&self) -> (String, Arc<AtomicBool>) {
+        let id = format!(
+            "explain-{}",
+            self.generation.fetch_add(1, Ordering::SeqCst) + 1
+        );
+        let cancel = Arc::new(AtomicBool::new(false));
+        self.jobs
+            .lock()
+            .expect("explain job map poisoned")
+            .insert(id.clone(), cancel.clone());
+        (id, cancel)
+    }
+
+    /// Flag a running explain job cancelled; `true` when found.
+    pub fn request_cancel(&self, job_id: &str) -> bool {
+        let jobs = self.jobs.lock().expect("explain job map poisoned");
+        if let Some(flag) = jobs.get(job_id) {
+            flag.store(true, Ordering::SeqCst);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Drop the registry entry when the job finishes.
+    pub fn remove(&self, job_id: &str) {
+        self.jobs
+            .lock()
+            .expect("explain job map poisoned")
+            .remove(job_id);
+    }
 }
 
 pub struct DiffState {
