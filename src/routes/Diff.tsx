@@ -104,7 +104,7 @@ export function DiffPage() {
       <div className="p-6">
         <ErrorCard
           detail={query.error instanceof Error ? query.error.message : String(query.error)}
-          onRetry={() => void query.refetch()}
+          onRetry={() => void queryClient.invalidateQueries({ queryKey: ["diff", jobId] })}
         />
       </div>
     );
@@ -147,7 +147,7 @@ export function DiffPage() {
             detail={snapshot.error ?? undefined}
             onRetry={
               snapshot.state === "failed"
-                ? () => void query.refetch()
+                ? () => void queryClient.invalidateQueries({ queryKey: ["diff", jobId] })
                 : undefined
             }
           />

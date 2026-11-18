@@ -2,7 +2,7 @@
 //! get_diff polling). Shown on the wizard while a job runs.
 
 import { Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { ArrowRight, Loader2, Square } from "lucide-react";
 
@@ -34,8 +34,9 @@ function stageLabel(stage: string): string {
 
 export function JobProgressCard({ className }: { className?: string }) {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
   const jobId = useLastJob();
-  const { data, isPending, refetch, error } = useQuery({
+  const { data, isPending, error } = useQuery({
     queryKey: ["diff", jobId],
     queryFn: () => getDiff(jobId ?? ""),
     enabled: jobId !== null,
@@ -98,7 +99,11 @@ export function JobProgressCard({ className }: { className?: string }) {
                 variant="ghost"
                 size="sm"
                 aria-label={t("wizard.recent.cancel")}
-                onClick={() => void cancelDiff(jobId).then(() => refetch())}
+                onClick={() =>
+                  void cancelDiff(jobId).then(() =>
+                    queryClient.invalidateQueries({ queryKey: ["diff", jobId] }),
+                  )
+                }
               >
                 <Square aria-hidden className="h-3 w-3" />
                 {t("wizard.recent.cancel")}

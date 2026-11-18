@@ -128,7 +128,11 @@ function ServerCard() {
     );
   }
   if (status.isError || !status.data) {
-    return <ErrorCard onRetry={() => void status.refetch()} />;
+    return (
+      <ErrorCard
+        onRetry={() => void queryClient.invalidateQueries({ queryKey: ["llm", "status"] })}
+      />
+    );
   }
 
   const data = status.data;
@@ -269,6 +273,7 @@ function ModelCard({ model, onChanged }: { model: LlmModelStatus; onChanged: () 
 
 function OcrCard() {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: ["ocr", "status"],
     queryFn: ocrStatus,
@@ -288,7 +293,11 @@ function OcrCard() {
   }
   const data = query.data;
   if (!data) {
-    return <ErrorCard onRetry={() => void query.refetch()} />;
+    return (
+      <ErrorCard
+        onRetry={() => void queryClient.invalidateQueries({ queryKey: ["ocr", "status"] })}
+      />
+    );
   }
   return (
     <Card>
@@ -379,7 +388,9 @@ export function DownloadsPage() {
         {status.isPending ? (
           <Skeleton className="h-40 w-full" />
         ) : status.isError ? (
-          <ErrorCard onRetry={() => void status.refetch()} />
+          <ErrorCard
+            onRetry={() => void queryClient.invalidateQueries({ queryKey: ["llm", "status"] })}
+          />
         ) : (
           models.map((model) => <ModelCard key={model.id} model={model} onChanged={refresh} />)
         )}
