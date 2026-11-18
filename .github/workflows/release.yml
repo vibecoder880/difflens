@@ -61,14 +61,9 @@ jobs:
       - name: Install frontend deps
         run: npm ci
 
-      - name: Fetch runtime resources (guarded until phase-03/05 scripts exist)
+      - name: Fetch runtime resources
         shell: bash
-        run: |
-          if [ -f scripts/fetch-models.sh ]; then
-            scripts/fetch-models.sh --bundle
-          else
-            echo "scripts/fetch-models.sh not present yet; bundling without pre-fetched resources"
-          fi
+        run: scripts/fetch-models.sh --bundle
 
       - name: Build and upload release
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # tag: v0.6.2

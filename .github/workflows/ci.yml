@@ -1,5 +1,9 @@
 name: CI
 
+# Third-party actions are pinned to commit SHAs (supply-chain
+# hygiene; renovate/dependabot can bump). Re-resolve the ref before
+# updating: gh api repos/<owner>/<repo>/commits/<ref>
+
 on:
   push:
     branches: [main]
@@ -14,15 +18,15 @@ jobs:
     name: Core (fmt, clippy, tests)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # tag: v4.4.0
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # tag: stable branch head
         with:
           components: rustfmt, clippy
 
       - name: Rust cache
-        uses: swatinem/rust-cache@v2
+        uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # tag: v2.9.3
         with:
           workspaces: core
 
@@ -63,25 +67,20 @@ jobs:
     name: Embeddings (ort feature, ubuntu only)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # tag: v4.4.0
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # tag: stable branch head
         with:
           components: clippy
 
       - name: Rust cache
-        uses: swatinem/rust-cache@v2
+        uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # tag: v2.9.3
         with:
           workspaces: core
 
-      - name: "Fetch e5-small ONNX test model (guarded: script arrives in phase-03)"
-        run: |
-          if [ -f scripts/fetch-models.sh ]; then
-            scripts/fetch-models.sh --test
-          else
-            echo "scripts/fetch-models.sh not present yet; skipping model fetch"
-          fi
+      - name: Fetch e5-small ONNX test model
+        run: scripts/fetch-models.sh --test
 
       - name: clippy (embeddings-ort)
         # ort-sys downloads prebuilt ONNX Runtime from cdn.pyke.io in its
@@ -99,25 +98,20 @@ jobs:
 
       - name: ort smoke test (ignored locally, runs here)
         run: |
-          if [ -f scripts/fetch-models.sh ]; then
-            for attempt in 1 2 3; do
-              if cargo test -p difflens-core --features embeddings-ort -- --ignored embeddings; then
-                exit 0
-              fi
-              echo "attempt $attempt failed — retrying in 15s"
-              sleep 15
-            done
-            exit 1
-          else
-            echo "no model yet; compiling feature gate only"
-            cargo check -p difflens-core --features embeddings-ort
-          fi
+          for attempt in 1 2 3; do
+            if cargo test -p difflens-core --features embeddings-ort -- --ignored embeddings; then
+              exit 0
+            fi
+            echo "attempt $attempt failed — retrying in 15s"
+            sleep 15
+          done
+          exit 1
 
   shell:
     name: Tauri shell compile (ubuntu)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # tag: v4.4.0
 
       - name: Install Tauri Linux deps
         run: |
@@ -125,10 +119,10 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev pkg-config
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # tag: stable branch head
 
       - name: Rust cache
-        uses: swatinem/rust-cache@v2
+        uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # tag: v2.9.3
 
       - name: check shell
         run: cargo check -p difflens
@@ -137,7 +131,7 @@ jobs:
     name: Egress audit (HTTP only in download/)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # tag: v4.4.0
 
       - name: audit network egress
         run: scripts/audit-egress.sh
@@ -147,13 +141,13 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # tag: v4.4.0
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # tag: stable branch head
 
       - name: Rust cache
-        uses: swatinem/rust-cache@v2
+        uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # tag: v2.9.3
         with:
           workspaces: core
 
@@ -174,9 +168,9 @@ jobs:
     name: Frontend (typecheck + build)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # tag: v4.4.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # tag: v4.4.0
         with:
           node-version: 24
           cache: npm
