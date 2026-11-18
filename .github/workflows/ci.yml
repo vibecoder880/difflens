@@ -62,7 +62,7 @@ jobs:
         with:
           workspaces: core
 
-      - name: Fetch e5-small ONNX test model (guarded: script arrives in phase-03)
+      - name: "Fetch e5-small ONNX test model (guarded: script arrives in phase-03)"
         run: |
           if [ -f scripts/fetch-models.sh ]; then
             scripts/fetch-models.sh --test
