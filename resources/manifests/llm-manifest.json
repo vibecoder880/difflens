@@ -1,0 +1,107 @@
+{
+  "manifest_version": 1,
+  "generated": "2026-11-18",
+  "generator_notes": "Pinned artifacts for the optional local-LLM sidecar. Every sha256 below was computed on the verification machine on 2026-11-18 by downloading the exact asset (llama.cpp releases + Qwen3-0.6B GGUF downloaded in full and hashed; the two larger GGUFs verified against the authoritative Hugging Face LFS pointer oid, which IS the file's sha256). Any future entry that could not be byte-verified this way MUST set verified=false and role=fallback. This file is the app's ONLY allowed source of download URLs (see scripts/audit-egress.sh).",
+  "llama_server": {
+    "repo": "ggml-org/llama.cpp",
+    "tag": "b12503",
+    "commit": "4577932fa",
+    "license": "MIT",
+    "license_url": "https://github.com/ggml-org/llama.cpp/blob/master/LICENSE",
+    "release_url": "https://github.com/ggml-org/llama.cpp/releases/tag/b12503",
+    "notes": "Pinned 2026-11-18 (latest binary release that day). VERIFIED BEHAVIOR on linux-x64: binary executes; '--port 0' is supported (binds an ephemeral loopback port and logs '... srv server_on_li: listening on http://127.0.0.1:<port>'); '/health' returns {\"status\":\"ok\"}; NOTE /health is exempt from --api-key auth by design (load-balancer probe) — auth was verified on POST /v1/chat/completions instead (401 without key, 200 with key). SSE streaming on /v1/chat/completions verified with data:/[DONE] frames. Each archive bundles llama-server plus its shared libraries (libggml*/libllama*/libmtmd*), so install extracts the whole hardened allowlisted bundle.",
+    "assets": [
+      {
+        "id": "linux-x64",
+        "target_triple": "x86_64-unknown-linux-gnu",
+        "archive": "tar.gz",
+        "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12503/llama-b12503-bin-ubuntu-x64.tar.gz",
+        "sha256": "0d585f8a78ffdfdc4f6303a089aaa1379c15323b33483b6548c85c774a376a9d",
+        "bytes": 23784463,
+        "server_basename": "llama-server",
+        "verified": true,
+        "verification": "asset downloaded 2026-11-18, sha256 computed locally, llama-server executed (version 1.0.0-dev build 12503 commit 4577932fa), real chat roundtrip completed"
+      },
+      {
+        "id": "windows-x64",
+        "target_triple": "x86_64-pc-windows-msvc",
+        "archive": "zip",
+        "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12503/llama-b12503-bin-win-cpu-x64.zip",
+        "sha256": "64bee9b6fece8e66c665c40290cbb84706af23c670041d024b56a71a39859d77",
+        "bytes": 25521102,
+        "server_basename": "llama-server.exe",
+        "verified": true,
+        "verification": "asset downloaded 2026-11-18 and sha256 computed locally; binary not executed (no Windows verification machine); contents listed: llama-server.exe launcher + llama-server-impl.dll"
+      },
+      {
+        "id": "macos-arm64",
+        "target_triple": "aarch64-apple-darwin",
+        "archive": "tar.gz",
+        "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12503/llama-b12503-bin-macos-arm64.tar.gz",
+        "sha256": "e88d7e91198d0de6ceb3d33711ac01ee0d5b519cd9ba4e81854e3bba84f22214",
+        "bytes": 17282183,
+        "server_basename": "llama-server",
+        "verified": true,
+        "verification": "asset downloaded 2026-11-18 and sha256 computed locally; binary not executed (no macOS verification machine)"
+      },
+      {
+        "id": "macos-x64",
+        "target_triple": "x86_64-apple-darwin",
+        "archive": "tar.gz",
+        "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12503/llama-b12503-bin-macos-x64.tar.gz",
+        "sha256": "4c42388726490b1ed7864dc621dd29526f0ced3d617a96c5ac111287a7a68ba5",
+        "bytes": 13055174,
+        "server_basename": "llama-server",
+        "verified": true,
+        "verification": "asset downloaded 2026-11-18 and sha256 computed locally; binary not executed (no macOS verification machine)"
+      }
+    ]
+  },
+  "models": [
+    {
+      "id": "qwen3-4b-instruct-2507-q4_k_m",
+      "role": "primary",
+      "repo": "unsloth/Qwen3-4B-Instruct-2507-GGUF",
+      "file": "Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+      "url": "https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+      "sha256": "3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597",
+      "bytes": 2497281120,
+      "license": "Apache-2.0",
+      "license_url": "https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507/blob/main/LICENSE",
+      "min_ram_gb": 8,
+      "verified": true,
+      "verification": "checksum from the authoritative HF LFS pointer oid (sha256 of the stored file), retrieved 2026-11-18; not byte-downloaded during manifest authoring (2.4 GB)",
+      "notes": "Best quality, strong Vietnamese. Needs >= 8 GB RAM; UI must show the size guidance before download."
+    },
+    {
+      "id": "qwen2.5-3b-instruct-q4_k_m",
+      "role": "fallback",
+      "repo": "Qwen/Qwen2.5-3B-Instruct-GGUF",
+      "file": "qwen2.5-3b-instruct-q4_k_m.gguf",
+      "url": "https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf",
+      "sha256": "626b4a6678b86442240e33df819e00132d3ba7dddfe1cdc4fbb18e0a9615c62d",
+      "bytes": 2104932768,
+      "license": "Apache-2.0",
+      "license_url": "https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/blob/main/LICENSE",
+      "min_ram_gb": 6,
+      "verified": true,
+      "verification": "checksum from the authoritative HF LFS pointer oid, retrieved 2026-11-18. Was flagged UNVERIFIED per red-team F6 at planning; verified at implementation.",
+      "notes": "Low-RAM fallback (~2.0 GB) for 6-8 GB machines; the dev-VM manual gate model."
+    },
+    {
+      "id": "qwen3-0.6b-q8_0-test",
+      "role": "test",
+      "repo": "Qwen/Qwen3-0.6B-GGUF",
+      "file": "Qwen3-0.6B-Q8_0.gguf",
+      "url": "https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf",
+      "sha256": "9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031",
+      "bytes": 639446688,
+      "license": "Apache-2.0",
+      "license_url": "https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/blob/main/LICENSE",
+      "min_ram_gb": 4,
+      "verified": true,
+      "verification": "FULLY verified 2026-11-18: downloaded in full on the verification machine, sha256 recomputed and matched this entry byte-for-byte; used by the ignored llm_real_roundtrip smoke test",
+      "notes": "Smoke-test model only (~610 MB). Smallest verified Qwen instruct GGUF (Qwen3-0.6B-Instruct repos do not exist as of 2026-11-18; this hybrid-thinking model is driven with enable_thinking=false). Not advertised in the UI model list."
+    }
+  ]
+}

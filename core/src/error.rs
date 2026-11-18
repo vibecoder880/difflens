@@ -24,6 +24,9 @@ pub enum CoreError {
     Io(#[from] std::io::Error),
     #[error("json error: {0}")]
     Json(#[from] serde_json::Error),
+    /// Cooperative cancellation of a download or streaming-explain job.
+    #[error("cancelled by user")]
+    Cancelled,
 }
 
 pub type CoreResult<T> = Result<T, CoreError>;

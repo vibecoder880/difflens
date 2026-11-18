@@ -21,6 +21,11 @@ hex = "0.4"
 rusqlite = { version = "0.32", features = ["bundled"] }
 regex = "1"
 
+# Download manager archive extraction (llama-server bundles are .tar.gz /
+# .zip). flate2 uses the pure-Rust miniz_oxide backend by default.
+flate2 = "1"
+tar = "0.4"
+
 # Optional: real embedding inference (onnxruntime). Tests and default builds
 # use the deterministic fake embedder so the 3-core CI/dev VM stays fast.
 # Pin: ort =2.0.0-rc.15 (wraps ONNX Runtime ~1.31), tokenizers 0.23.2 stable.
@@ -39,3 +44,6 @@ embeddings-ort = ["ort", "tokenizers"]
 [dev-dependencies]
 tempfile = "3"
 serde_json.workspace = true
+# Integration tests craft zip/tar.gz fixtures with the same crates the
+# library uses.
+zip.workspace = true
