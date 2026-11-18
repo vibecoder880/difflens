@@ -47,6 +47,10 @@ export interface Change {
   new_page: number | null;
   /** Inline word-level diff (present for Modified/Moved pairs). */
   spans: DiffSpan[];
+  /** Full old-side block text (present only for Removed changes; absent otherwise). */
+  old_text?: string | null;
+  /** Full new-side block text (present only for Added changes; absent otherwise). */
+  new_text?: string | null;
   /** Cosine similarity of the aligned pair (0..1), when computed. */
   similarity: number | null;
   /** Position delta for moved blocks (dx, dy). */

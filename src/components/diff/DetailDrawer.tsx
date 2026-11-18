@@ -11,6 +11,7 @@ import { ExplainPanel } from "@/components/llm/ExplainPanel";
 import { SpanText } from "@/components/diff/InlineSpans";
 import { cn } from "@/lib/cn";
 import { formatDelta } from "@/lib/format";
+import { sideOnlyText } from "@/lib/diffRows";
 import type { AuditEntry, Change, HeuristicFlag } from "@/lib/types";
 
 function FlagRow({ flag }: { flag: HeuristicFlag }) {
@@ -49,6 +50,24 @@ function FlagRow({ flag }: { flag: HeuristicFlag }) {
         </span>
       ) : null}
     </li>
+  );
+}
+
+/** Full text of one drawer side: spans, carried side-only text, or a fallback. */
+function DrawerSideText({ change, side }: { change: Change; side: "old" | "new" }) {
+  const { t } = useTranslation();
+  if (change.spans.length > 0) {
+    return <SpanText spans={change.spans} side={side} />;
+  }
+  const text = sideOnlyText(change, side);
+  if (text !== null) {
+    return <span className="whitespace-pre-wrap text-fg">{text}</span>;
+  }
+  const ids = side === "old" ? change.old_block_ids : change.new_block_ids;
+  return (
+    <span className="text-muted">
+      {ids.length > 0 ? ids.join(", ") : t("drawer.noText")}
+    </span>
   );
 }
 
@@ -112,29 +131,13 @@ export function DetailDrawer({
               {t("drawer.oldText")}
             </h3>
             <div className="rounded-lg border border-line bg-delete-row p-2.5 text-xs leading-relaxed break-words">
-              {change.spans.length > 0 ? (
-                <SpanText spans={change.spans} side="old" />
-              ) : (
-                <span className="text-muted">
-                  {change.old_block_ids.length > 0
-                    ? change.old_block_ids.join(", ")
-                    : t("drawer.noText")}
-                </span>
-              )}
+              <DrawerSideText change={change} side="old" />
             </div>
             <h3 className="mt-3 mb-1.5 text-xs font-semibold tracking-wide text-subtle uppercase">
               {t("drawer.newText")}
             </h3>
             <div className="rounded-lg border border-line bg-insert-row p-2.5 text-xs leading-relaxed break-words">
-              {change.spans.length > 0 ? (
-                <SpanText spans={change.spans} side="new" />
-              ) : (
-                <span className="text-muted">
-                  {change.new_block_ids.length > 0
-                    ? change.new_block_ids.join(", ")
-                    : t("drawer.noText")}
-                </span>
-              )}
+              <DrawerSideText change={change} side="new" />
             </div>
           </section>
 

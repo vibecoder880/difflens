@@ -3,9 +3,11 @@
 import { describe, expect, it } from "vitest";
 import {
   buildRows,
+  changeExcerpt,
   mergeAdjacentSpans,
   rowIndexForChange,
   rowChangeIds,
+  sideOnlyText,
   sidesFromSpans,
   spansText,
 } from "./diffRows";
@@ -175,5 +177,60 @@ describe("mergeAdjacentSpans", () => {
       { op: "equal", text: "hi" },
     ]);
     expect(mergeAdjacentSpans([])).toEqual([]);
+  });
+});
+
+describe("sideOnlyText", () => {
+  it("exposes new_text for added changes", () => {
+    const c = change("a", "added", { new_text: "Extra clause." });
+    expect(sideOnlyText(c, "new")).toBe("Extra clause.");
+    expect(sideOnlyText(c, "old")).toBeNull();
+  });
+
+  it("exposes old_text for removed changes", () => {
+    const c = change("r", "removed", { old_text: "Liability cap of 1.000 USD." });
+    expect(sideOnlyText(c, "old")).toBe("Liability cap of 1.000 USD.");
+    expect(sideOnlyText(c, "new")).toBeNull();
+  });
+
+  it("returns null for paired kinds and missing text", () => {
+    expect(sideOnlyText(change("m", "modified"), "old")).toBeNull();
+    expect(sideOnlyText(change("e", "equal"), "new")).toBeNull();
+    expect(sideOnlyText(change("x", "added"), "new")).toBeNull();
+  });
+});
+
+describe("changeExcerpt", () => {
+  it("uses inline span text for modified changes", () => {
+    const c = change("m", "modified", {
+      spans: [
+        { op: "equal", text: "Pay within " },
+        { op: "insert", text: "45" },
+        { op: "delete", text: "30" },
+        { op: "equal", text: " days." },
+      ],
+    });
+    expect(changeExcerpt(c)).toBe("Pay within 4530 days.");
+  });
+
+  it("uses the carried block text for added/removed changes", () => {
+    expect(changeExcerpt(change("a", "added", { new_text: "  Extra   clause. " }))).toBe(
+      "Extra clause.",
+    );
+    expect(changeExcerpt(change("r", "removed", { old_text: "Governing law of Vietnam." }))).toBe(
+      "Governing law of Vietnam.",
+    );
+  });
+
+  it("falls back to block ids and the change id", () => {
+    expect(changeExcerpt(change("a", "added", { new_block_ids: ["b2", "b3"] }))).toBe("b2 b3");
+    expect(changeExcerpt(change("solo", "modified"))).toBe("solo");
+  });
+
+  it("truncates long text with an ellipsis at 90 chars", () => {
+    const long = "x".repeat(120);
+    const excerpt = changeExcerpt(change("a", "added", { new_text: long }));
+    expect(excerpt).toHaveLength(91);
+    expect(excerpt.endsWith("…")).toBe(true);
   });
 });

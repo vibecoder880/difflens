@@ -91,10 +91,20 @@ export function onLlmDone(
 // Diff commands (phase 03/06)
 // ---------------------------------------------------------------------------
 
-export function runDiff(oldPath: string, newPath: string): Promise<JobSnapshot> {
+/**
+ * Start a diff job. `ocrEnabled` maps to the backend `ocr_enabled` param:
+ * pass the stored settings preference; `undefined`/`null` keeps the
+ * backend default (auto) behavior.
+ */
+export function runDiff(
+  oldPath: string,
+  newPath: string,
+  ocrEnabled?: boolean | null,
+): Promise<JobSnapshot> {
   return invoke<JobSnapshot>("run_diff", {
     oldPath,
     newPath,
+    ocrEnabled: ocrEnabled ?? null,
   });
 }
 

@@ -19,7 +19,7 @@ import { ArrowLeftRight, ChevronDown, ChevronRight } from "lucide-react";
 
 import { SpanText } from "./InlineSpans";
 import { cn } from "@/lib/cn";
-import { buildRows, rowIndexForChange } from "@/lib/diffRows";
+import { buildRows, rowIndexForChange, sideOnlyText } from "@/lib/diffRows";
 import { KIND_GLYPHS, formatNumber, severityStyle } from "@/lib/format";
 import type { Change } from "@/lib/types";
 import type { DiffRow } from "@/lib/diffRows";
@@ -43,7 +43,7 @@ function PageChip({ page }: { page: number | null }) {
   );
 }
 
-/** Block id chips for Added/Removed (no inline text exists on the wire). */
+/** Block id chips — fallback when a change carries neither spans nor text. */
 function BlockIds({ ids }: { ids: string[] }) {
   if (ids.length === 0) return <span className="text-subtle">—</span>;
   return (
@@ -83,6 +83,28 @@ function KindGlyph({ change }: { change: Change }) {
   );
 }
 
+/** One column of a change row: spans, side-only text, or id-chip fallback. */
+function CellContent({ change, side }: { change: Change; side: "old" | "new" }) {
+  const text = sideOnlyText(change, side);
+  if (text !== null) {
+    return (
+      <span>
+        <KindGlyph change={change} />
+        <span className="whitespace-pre-wrap">{text}</span>
+      </span>
+    );
+  }
+  if (change.spans.length > 0) {
+    return (
+      <span>
+        <KindGlyph change={change} />
+        <SpanText spans={change.spans} side={side} />
+      </span>
+    );
+  }
+  return <BlockIds ids={side === "old" ? change.old_block_ids : change.new_block_ids} />;
+}
+
 // ---------------------------------------------------------------------------
 // Rows
 // ---------------------------------------------------------------------------
@@ -102,11 +124,24 @@ function PairRow({
   const isRemoved = c.kind === "removed";
   const sev = c.severity !== null ? severityStyle(c.severity) : null;
 
+  const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onSelect(c.id);
+    }
+  };
+
   return (
     <div
+      role="button"
+      tabIndex={0}
+      aria-pressed={selected}
+      aria-label={t(`kind.${c.kind}`)}
       onClick={() => onSelect(c.id)}
+      onKeyDown={onKeyDown}
       className={cn(
         "grid h-full cursor-pointer grid-cols-2 gap-px border-b border-line",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset",
         selected && "ring-2 ring-accent ring-inset",
         isAdded && "bg-insert-row",
         isRemoved && "bg-delete-row",
@@ -118,18 +153,7 @@ function PairRow({
         <div className="flex items-start">
           <PageChip page={c.old_page} />
           <span className="min-w-0 flex-1 text-[13px] leading-snug break-words">
-            {isAdded ? (
-              <span className="text-subtle">—</span>
-            ) : isRemoved ? (
-              <BlockIds ids={c.old_block_ids} />
-            ) : c.spans.length > 0 ? (
-              <span>
-                <KindGlyph change={c} />
-                <SpanText spans={c.spans} side="old" />
-              </span>
-            ) : (
-              <BlockIds ids={c.old_block_ids} />
-            )}
+            {isAdded ? <span className="text-subtle">—</span> : <CellContent change={c} side="old" />}
           </span>
         </div>
       </div>
@@ -145,15 +169,8 @@ function PairRow({
           <span className="min-w-0 flex-1 text-[13px] leading-snug break-words">
             {isRemoved ? (
               <span className="text-subtle">—</span>
-            ) : isAdded ? (
-              <BlockIds ids={c.new_block_ids} />
-            ) : c.spans.length > 0 ? (
-              <span>
-                <KindGlyph change={c} />
-                <SpanText spans={c.spans} side="new" />
-              </span>
             ) : (
-              <BlockIds ids={c.new_block_ids} />
+              <CellContent change={c} side="new" />
             )}
           </span>
           {c.kind === "moved" ? (

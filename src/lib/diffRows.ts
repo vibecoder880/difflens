@@ -104,3 +104,34 @@ export function mergeAdjacentSpans(spans: DiffSpan[]): DiffSpan[] {
 export function spansText(spans: DiffSpan[]): string {
   return spans.map((s) => s.text).join("");
 }
+
+/**
+ * Full text carried for side-only changes: Added exposes `new_text`,
+ * Removed exposes `old_text`. Paired changes (Modified/Moved/Equal) render
+ * spans instead and return null here.
+ */
+export function sideOnlyText(change: Change, side: "old" | "new"): string | null {
+  const text = side === "old" ? change.old_text : change.new_text;
+  return typeof text === "string" && text.length > 0 ? text : null;
+}
+
+/**
+ * Single-line excerpt for the change list: inline span text when present,
+ * else the carried side-only text (Added/Removed), else the block ids.
+ */
+export function changeExcerpt(change: Change, maxLen = 90): string {
+  const text = change.spans
+    .map((s) => s.text)
+    .join("")
+    .trim()
+    .replaceAll(/\s+/g, " ");
+  const flat =
+    text.length > 0
+      ? text
+      : (sideOnlyText(change, "old") ?? sideOnlyText(change, "new") ?? "")
+          .trim()
+          .replaceAll(/\s+/g, " ");
+  if (flat.length > 0) return flat.length > maxLen ? `${flat.slice(0, maxLen)}…` : flat;
+  const ids = [...change.old_block_ids, ...change.new_block_ids];
+  return ids.length > 0 ? ids.join(" ") : change.id;
+}

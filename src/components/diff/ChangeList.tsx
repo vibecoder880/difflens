@@ -8,7 +8,7 @@ import { SeverityBadge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { cn } from "@/lib/cn";
 import { KIND_GLYPHS, severityStyle } from "@/lib/format";
-import { spansText } from "@/lib/diffRows";
+import { changeExcerpt } from "@/lib/diffRows";
 import {
   EMPTY_FILTERS,
   FILTER_KINDS,
@@ -20,15 +20,6 @@ import {
 } from "@/lib/filters";
 import type { DiffFilters } from "@/lib/filters";
 import type { Change, ChangeKind, Severity } from "@/lib/types";
-
-function excerpt(change: Change): string {
-  if (change.spans.length > 0) {
-    const text = spansText(change.spans).trim().replaceAll(/\s+/g, " ");
-    if (text.length > 0) return text.length > 90 ? `${text.slice(0, 90)}…` : text;
-  }
-  const ids = [...change.old_block_ids, ...change.new_block_ids];
-  return ids.length > 0 ? ids.join(" ") : change.id;
-}
 
 function FilterChip({
   active,
@@ -158,7 +149,7 @@ export function ChangeList({
                 <button
                   type="button"
                   data-change-id={c.id}
-                  aria-label={`${t(`kind.${c.kind}`)} — ${excerpt(c)}`}
+                  aria-label={`${t(`kind.${c.kind}`)} — ${changeExcerpt(c)}`}
                   onClick={() => onSelect(c.id)}
                   className={cn(
                     "flex w-full flex-col gap-1 border-b border-line px-3 py-2 text-left transition-colors",
@@ -180,7 +171,7 @@ export function ChangeList({
                       {KIND_GLYPHS[c.kind]}
                     </span>
                     <span className="min-w-0 flex-1 truncate text-xs text-muted">
-                      {excerpt(c)}
+                      {changeExcerpt(c)}
                     </span>
                     {c.severity !== null ? <SeverityBadge severity={c.severity} /> : null}
                   </span>

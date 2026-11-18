@@ -10,30 +10,8 @@ import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import pkg from "../../package.json";
 import { LOCALES, type Locale } from "@/lib/i18n";
+import { loadOcrPref, persistOcrPref } from "@/lib/prefs";
 import { useTheme, THEME_MODES, type ThemeMode } from "@/lib/theme";
-
-// ---------------------------------------------------------------------------
-// Local preferences (localStorage; no backend wiring needed in phase-07)
-// ---------------------------------------------------------------------------
-
-const OCR_KEY = "difflens.ocrPrefer";
-
-function loadOcrPref(): boolean {
-  try {
-    const stored = window.localStorage.getItem(OCR_KEY);
-    return stored === null ? true : stored === "true";
-  } catch {
-    return true;
-  }
-}
-
-function persistOcrPref(value: boolean): void {
-  try {
-    window.localStorage.setItem(OCR_KEY, value ? "true" : "false");
-  } catch {
-    // Non-fatal.
-  }
-}
 
 // ---------------------------------------------------------------------------
 

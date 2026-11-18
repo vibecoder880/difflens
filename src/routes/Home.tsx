@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { TauriRequiredError, isTauri, pickDocument, runDiff } from "@/lib/tauri";
 import { formatFromExtension } from "@/lib/format";
 import { setLastJob } from "@/lib/jobStore";
+import { loadOcrPref } from "@/lib/prefs";
 
 export function HomePage() {
   const { t } = useTranslation();
@@ -85,7 +86,8 @@ export function HomePage() {
     setStarting(true);
     setError(null);
     try {
-      const snapshot = await runDiff(oldPath, newPath);
+      // Honor the settings OCR preference (localStorage) on every run.
+      const snapshot = await runDiff(oldPath, newPath, loadOcrPref());
       setLastJob(snapshot.job_id);
       await navigate({ to: "/diff/$jobId", params: { jobId: snapshot.job_id } });
     } catch (e) {
