@@ -1,21 +1,271 @@
 @import "tailwindcss";
 
-/* DiffLens design tokens (refined in phase-07) */
+/* DiffLens design system (phase-07).
+   Neutrals: zinc. Accent: indigo. Severity bands: info=slate, low=sky,
+   medium=amber, high=orange, critical=red.
+   Dark mode is class-driven (`.dark`, synced with prefers-color-scheme in
+   src/lib/theme.ts) so the in-app System/Light/Dark selector works. */
+
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
+  /* surfaces */
   --dl-bg: #fafafa;
+  --dl-surface: #ffffff;
+  --dl-surface-2: #f4f4f5;
+  --dl-surface-3: #ececed;
+  --dl-border: #e4e4e7;
+  --dl-border-strong: #d4d4d8;
+  /* text */
   --dl-fg: #18181b;
+  --dl-muted: #52525b;
+  --dl-subtle: #a1a1aa;
+  /* accent */
+  --dl-accent: #4f46e5;
+  --dl-accent-hover: #4338ca;
+  --dl-accent-fg: #ffffff;
+  --dl-accent-soft: #eef2ff;
+  --dl-accent-edge: #c7d2fe;
+  /* inline diff washes */
+  --dl-insert-bg: #dcfce7;
+  --dl-insert-fg: #14532d;
+  --dl-insert-row: #f0fdf4;
+  --dl-delete-bg: #fee2e2;
+  --dl-delete-fg: #7f1d1d;
+  --dl-delete-row: #fef2f2;
+  /* severity: info (slate) */
+  --dl-sev-info: #64748b;
+  --dl-sev-info-text: #475569;
+  --dl-sev-info-soft: #f1f5f9;
+  --dl-sev-info-edge: #e2e8f0;
+  /* severity: low (sky) */
+  --dl-sev-low: #0ea5e9;
+  --dl-sev-low-text: #0369a1;
+  --dl-sev-low-soft: #e0f2fe;
+  --dl-sev-low-edge: #bae6fd;
+  /* severity: medium (amber) */
+  --dl-sev-medium: #f59e0b;
+  --dl-sev-medium-text: #92400e;
+  --dl-sev-medium-soft: #fef3c7;
+  --dl-sev-medium-edge: #fde68a;
+  /* severity: high (orange) */
+  --dl-sev-high: #f97316;
+  --dl-sev-high-text: #c2410c;
+  --dl-sev-high-soft: #ffedd5;
+  --dl-sev-high-edge: #fed7aa;
+  /* severity: critical (red) */
+  --dl-sev-critical: #dc2626;
+  --dl-sev-critical-text: #b91c1c;
+  --dl-sev-critical-soft: #fee2e2;
+  --dl-sev-critical-edge: #fecaca;
+  /* focus ring */
+  --dl-ring: #6366f1;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --dl-bg: #0f0f10;
-    --dl-fg: #f4f4f5;
-  }
+.dark {
+  --dl-bg: #09090b;
+  --dl-surface: #131316;
+  --dl-surface-2: #1b1b1e;
+  --dl-surface-3: #242428;
+  --dl-border: #27272a;
+  --dl-border-strong: #3f3f46;
+  --dl-fg: #f4f4f5;
+  --dl-muted: #a1a1aa;
+  --dl-subtle: #71717a;
+  --dl-accent: #818cf8;
+  --dl-accent-hover: #a5b4fc;
+  --dl-accent-fg: #09090b;
+  --dl-accent-soft: #1e1b4b;
+  --dl-accent-edge: #3730a3;
+  --dl-insert-bg: #143624;
+  --dl-insert-fg: #86efac;
+  --dl-insert-row: #0c1f16;
+  --dl-delete-bg: #3f1717;
+  --dl-delete-fg: #fca5a5;
+  --dl-delete-row: #221012;
+  --dl-sev-info: #94a3b8;
+  --dl-sev-info-text: #cbd5e1;
+  --dl-sev-info-soft: #1e293b;
+  --dl-sev-info-edge: #334155;
+  --dl-sev-low: #38bdf8;
+  --dl-sev-low-text: #7dd3fc;
+  --dl-sev-low-soft: #082f49;
+  --dl-sev-low-edge: #0c4a6e;
+  --dl-sev-medium: #fbbf24;
+  --dl-sev-medium-text: #fcd34d;
+  --dl-sev-medium-soft: #451a03;
+  --dl-sev-medium-edge: #78350f;
+  --dl-sev-high: #fb923c;
+  --dl-sev-high-text: #fdba74;
+  --dl-sev-high-soft: #431407;
+  --dl-sev-high-edge: #7c2d12;
+  --dl-sev-critical: #f87171;
+  --dl-sev-critical-text: #fca5a5;
+  --dl-sev-critical-soft: #450a0a;
+  --dl-sev-critical-edge: #7f1d1d;
+  --dl-ring: #818cf8;
+}
+
+/* Tailwind 4 theme bridge: utilities reference the runtime vars so .dark
+   swaps work without re-rendering class lists. */
+@theme inline {
+  --color-bg: var(--dl-bg);
+  --color-surface: var(--dl-surface);
+  --color-surface-2: var(--dl-surface-2);
+  --color-surface-3: var(--dl-surface-3);
+  --color-line: var(--dl-border);
+  --color-line-strong: var(--dl-border-strong);
+  --color-fg: var(--dl-fg);
+  --color-muted: var(--dl-muted);
+  --color-subtle: var(--dl-subtle);
+  --color-accent: var(--dl-accent);
+  --color-accent-hover: var(--dl-accent-hover);
+  --color-accent-fg: var(--dl-accent-fg);
+  --color-accent-soft: var(--dl-accent-soft);
+  --color-accent-edge: var(--dl-accent-edge);
+  --color-insert-bg: var(--dl-insert-bg);
+  --color-insert-fg: var(--dl-insert-fg);
+  --color-insert-row: var(--dl-insert-row);
+  --color-delete-bg: var(--dl-delete-bg);
+  --color-delete-fg: var(--dl-delete-fg);
+  --color-delete-row: var(--dl-delete-row);
+  --color-severity-info: var(--dl-sev-info);
+  --color-severity-info-text: var(--dl-sev-info-text);
+  --color-severity-info-soft: var(--dl-sev-info-soft);
+  --color-severity-info-edge: var(--dl-sev-info-edge);
+  --color-severity-low: var(--dl-sev-low);
+  --color-severity-low-text: var(--dl-sev-low-text);
+  --color-severity-low-soft: var(--dl-sev-low-soft);
+  --color-severity-low-edge: var(--dl-sev-low-edge);
+  --color-severity-medium: var(--dl-sev-medium);
+  --color-severity-medium-text: var(--dl-sev-medium-text);
+  --color-severity-medium-soft: var(--dl-sev-medium-soft);
+  --color-severity-medium-edge: var(--dl-sev-medium-edge);
+  --color-severity-high: var(--dl-sev-high);
+  --color-severity-high-text: var(--dl-sev-high-text);
+  --color-severity-high-soft: var(--dl-sev-high-soft);
+  --color-severity-high-edge: var(--dl-sev-high-edge);
+  --color-severity-critical: var(--dl-sev-critical);
+  --color-severity-critical-text: var(--dl-sev-critical-text);
+  --color-severity-critical-soft: var(--dl-sev-critical-soft);
+  --color-severity-critical-edge: var(--dl-sev-critical-edge);
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+  --spacing: 0.25rem;
+}
+
+html,
+body {
+  height: 100%;
 }
 
 body {
   margin: 0;
   background: var(--dl-bg);
   color: var(--dl-fg);
-  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Keyboard focus: always visible, never on mouse clicks. */
+:focus-visible {
+  outline: 2px solid var(--dl-ring);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Numbers align in columns (stats chips, deltas, pages). */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Micro-transitions only; honor the OS reduced-motion preference. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Slim, theme-aware scrollbars (webkit2gtk). */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--dl-border-strong);
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--dl-subtle);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Native <dialog> polish. */
+dialog.dl-dialog {
+  color: var(--dl-fg);
+}
+dialog.dl-dialog::backdrop {
+  background: rgba(9, 9, 11, 0.55);
+}
+
+/* Indeterminate progress shimmer. */
+@keyframes dl-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(400%);
+  }
+}
+.dl-progress-indeterminate {
+  animation: dl-slide 1.4s ease-in-out infinite;
+}
+
+/* CSS-only tooltip bubble (shown on hover or keyboard focus). */
+.dl-tip {
+  position: relative;
+}
+.dl-tip::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 6px);
+  transform: translateX(-50%) translateY(2px);
+  background: var(--dl-surface-3);
+  color: var(--dl-fg);
+  border: 1px solid var(--dl-border-strong);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+  line-height: 1.3;
+  white-space: nowrap;
+  max-width: 280px;
+  width: max-content;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease, transform 120ms ease;
+  z-index: 60;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+}
+.dl-tip:hover::after,
+.dl-tip:focus-visible::after,
+.dl-tip:focus-within::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+.dl-tip-below::after {
+  bottom: auto;
+  top: calc(100% + 6px);
 }

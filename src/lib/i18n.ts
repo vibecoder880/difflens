@@ -1,11 +1,11 @@
 //! i18next bootstrap: EN + VI resources, OS-locale detection, localStorage
 //! persistence, `<html lang>` sync. Import `initI18n()` before rendering.
 
-import i18next, { type i18n as I18n } from "i18next";
+import i18next from "i18next";
 import { initReactI18next } from "react-i18next";
 
-import en from "./en.json";
-import vi from "./vi.json";
+import en from "../i18n/en.json";
+import vi from "../i18n/vi.json";
 
 export const LOCALES = ["en", "vi"] as const;
 export type Locale = (typeof LOCALES)[number];
@@ -40,22 +40,25 @@ export function persistLocale(locale: Locale): void {
 }
 
 /** Idempotent init — safe to call from multiple entry points. */
-export function initI18n(): Promise<I18n> {
+export function initI18n(): Promise<void> {
   const lng = detectLocale();
   if (i18next.isInitialized) {
-    return Promise.resolve(i18next);
+    return Promise.resolve();
   }
   void persistLocale(lng);
-  return i18next.use(initReactI18next).init({
-    lng,
-    fallbackLng: DEFAULT_LOCALE,
-    resources: {
-      en: { translation: en },
-      vi: { translation: vi },
-    },
-    interpolation: { escapeValue: false },
-    returnNull: false,
-  });
+  return i18next
+    .use(initReactI18next)
+    .init({
+      lng,
+      fallbackLng: DEFAULT_LOCALE,
+      resources: {
+        en: { translation: en },
+        vi: { translation: vi },
+      },
+      interpolation: { escapeValue: false },
+      returnNull: false,
+    })
+    .then(() => undefined);
 }
 
 export function isLocaleValue(value: string): value is Locale {

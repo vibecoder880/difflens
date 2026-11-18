@@ -32,8 +32,12 @@ export default defineConfig({
   },
   envPrefix: ["VITE_", "TAURI_ENV_"],
   build: {
+    // WebKitGTK 4.1 (Linux), WebView2 (Windows) and WKWebView (macOS) all
+    // ship modern JS engines; safari13 (old scaffold baseline) cannot take
+    // the TanStack/i18next dependency graph. Safari 16 covers the oldest
+    // engine in the set (webkit2gtk-4.1).
     target:
-      process.env.TAURI_ENV_PLATFORM === "windows" ? "chrome105" : "safari13",
+      process.env.TAURI_ENV_PLATFORM === "windows" ? "chrome105" : "safari16",
     minify: !process.env.TAURI_ENV_DEBUG ? "esbuild" : false,
     sourcemap: !!process.env.TAURI_ENV_DEBUG,
   },
