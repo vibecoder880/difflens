@@ -32,6 +32,12 @@ pub struct ProgressPayload {
 
 /// Start a diff job. Returns the initial snapshot including the job id.
 ///
+/// Trust model: `old_path`/`new_path` are user-chosen documents picked via
+/// the native open dialog (the webview never types free-form paths by
+/// design). As defense-in-depth the backend still requires both paths to
+/// be non-empty existing regular files, so a compromised webview cannot
+/// use this command as an arbitrary-file-read primitive.
+///
 /// `ocr_enabled`: `None` keeps the default (auto) OCR behavior; `Some(false)`
 /// disables the experimental OCR fallback entirely, `Some(true)` is
 /// equivalent to the default.
@@ -43,6 +49,8 @@ pub fn run_diff(
     app: AppHandle,
     state: State<AppState>,
 ) -> Result<JobSnapshot, String> {
+    validate_input_file(&old_path)?;
+    validate_input_file(&new_path)?;
     let diff = state.diff.clone();
     let job_id = diff.next_job_id();
     let cancel = diff.insert_running(&job_id);
@@ -75,6 +83,18 @@ pub fn run_diff(
 
     diff.snapshot(&job_id)
         .ok_or_else(|| "job record vanished".to_string())
+}
+
+/// Defense-in-depth for webview-supplied document paths: require a
+/// non-empty path pointing at an existing regular file (see `run_diff`).
+fn validate_input_file(path: &str) -> Result<(), String> {
+    if path.trim().is_empty() {
+        return Err("document path is empty".into());
+    }
+    if !PathBuf::from(path).is_file() {
+        return Err(format!("document path is not a readable file: {path}"));
+    }
+    Ok(())
 }
 
 /// Fetch the current snapshot (status + result) of a diff job.
@@ -228,8 +248,14 @@ pub fn delete_session(session_id: String, app: AppHandle) -> Result<bool, String
 }
 
 /// Render a report for a live job (`job-*`, in memory) or a persisted
-/// session (`session-*`, store) and write it to `target_path` (chosen by
-/// the frontend via the native save dialog). Returns bytes written.
+/// session (`session-*`, store) and write it to `target_path`. Returns
+/// bytes written.
+///
+/// Trust model: `target_path` is a user-chosen destination from the native
+/// save dialog (the frontend only forwards dialog results). As
+/// defense-in-depth the backend validates it — non-empty, absolute, not a
+/// directory, parent exists, extension matching the format — so a
+/// compromised webview does not gain an arbitrary-file-write primitive.
 #[tauri::command]
 pub fn export_report(
     id: String,
@@ -270,6 +296,54 @@ pub fn export_report(
     )
 }
 
+/// Canonical file extension for a report format (`"html"` / `"md"`).
+fn report_extension(format: &str) -> Result<&'static str, String> {
+    match format {
+        "html" => Ok("html"),
+        "md" | "markdown" => Ok("md"),
+        other => Err(format!(
+            "unknown report format {other:?} (expected \"html\" or \"md\")"
+        )),
+    }
+}
+
+/// Defense-in-depth for the webview-supplied report target (see
+/// `export_report`): require a non-empty absolute path that is not a
+/// directory, whose parent exists and whose extension matches the format
+/// (the save dialog enforces all of this for user-chosen paths; a
+/// compromised webview must not pick arbitrary file types).
+fn validate_report_target(target_path: &str, format: &str) -> Result<PathBuf, String> {
+    if target_path.trim().is_empty() {
+        return Err("report target path is empty".into());
+    }
+    let target = PathBuf::from(target_path);
+    if !target.is_absolute() {
+        return Err(format!(
+            "report target path must be absolute: {target_path}"
+        ));
+    }
+    let ext = target
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase());
+    let wanted = report_extension(format)?;
+    if ext.as_deref() != Some(wanted) {
+        return Err(format!(
+            "report file extension must be .{wanted} for format {format:?}: {target_path}"
+        ));
+    }
+    if target.is_dir() {
+        return Err(format!("target path is a directory: {target_path}"));
+    }
+    match target.parent() {
+        Some(parent) if !parent.is_dir() => Err(format!(
+            "target directory does not exist: {}",
+            parent.display()
+        )),
+        _ => Ok(target),
+    }
+}
+
 /// Format + validate + write the report file (no Tauri types — headless
 /// testable). Returns bytes written.
 fn write_report(
@@ -297,25 +371,7 @@ fn write_report(
             ));
         }
     };
-    // Path validation: never a directory; parent must exist (the dialog
-    // hands us a user-chosen path in an existing folder).
-    let target = PathBuf::from(target_path);
-    if target.is_dir() {
-        return Err(format!("target path is a directory: {target_path}"));
-    }
-    let parent_missing = match target.parent() {
-        None => false, // bare file name in the current directory
-        Some(parent) => !parent.as_os_str().is_empty() && !parent.is_dir(),
-    };
-    if parent_missing {
-        return Err(format!(
-            "target directory does not exist: {}",
-            target
-                .parent()
-                .and_then(|p| p.to_str())
-                .unwrap_or(target_path)
-        ));
-    }
+    let target = validate_report_target(target_path, format)?;
     let bytes = content.into_bytes();
     std::fs::write(&target, &bytes).map_err(|e| format!("write report: {e}"))?;
     Ok(bytes.len() as u64)
@@ -500,11 +556,6 @@ fn app_paths(app: &AppHandle) -> Result<(PathBuf, PathBuf), String> {
     Ok((data.join("bin"), data.join("models")))
 }
 
-/// Model file name for a manifest entry (file component of its URL).
-fn model_file(model: &difflens_core::download::manifest::ModelEntry) -> String {
-    model.file.clone()
-}
-
 #[tauri::command]
 pub fn llm_status(app: AppHandle) -> Result<LlmStatus, String> {
     let manifest = difflens_core::download::manifest::LlmManifest::embedded();
@@ -516,7 +567,7 @@ pub fn llm_status(app: AppHandle) -> Result<LlmStatus, String> {
         .models
         .iter()
         .map(|m| {
-            let path = models_dir.join(model_file(m));
+            let path = models_dir.join(&m.file);
             let present = path.is_file();
             let downloaded_bytes = path.metadata().map(|md| md.len()).unwrap_or(0);
             LlmModelStatus {
@@ -550,8 +601,62 @@ pub fn llm_status(app: AppHandle) -> Result<LlmStatus, String> {
     })
 }
 
+/// Percent from bytes done/total (0 while total is unknown).
+fn download_percent(done: u64, total: Option<u64>) -> u8 {
+    total
+        .map(|t| ((done as f64 / t.max(1) as f64) * 100.0).min(100.0) as u8)
+        .unwrap_or(0)
+}
+
+/// Running-state `llm://download` payload (shared by the server/model
+/// download threads).
+fn running_payload(
+    job_id: &str,
+    kind: &str,
+    model_id: &str,
+    done: u64,
+    total: Option<u64>,
+) -> LlmDownloadPayload {
+    LlmDownloadPayload {
+        job_id: job_id.to_string(),
+        kind: kind.to_string(),
+        model_id: model_id.to_string(),
+        state: "running".into(),
+        bytes_done: done,
+        bytes_total: total,
+        percent: download_percent(done, total),
+        error: None,
+    }
+}
+
+/// Terminal (event state, manager `JobState`, error message) for a
+/// download outcome.
+fn download_outcome(
+    result: &Result<std::path::PathBuf, difflens_core::CoreError>,
+) -> (
+    &'static str,
+    difflens_core::download::JobState,
+    Option<String>,
+) {
+    match result {
+        Ok(_) => ("done", difflens_core::download::JobState::Done, None),
+        Err(difflens_core::CoreError::Cancelled) => (
+            "cancelled",
+            difflens_core::download::JobState::Cancelled,
+            Some("cancelled by user".into()),
+        ),
+        Err(e) => (
+            "failed",
+            difflens_core::download::JobState::Failed,
+            Some(e.to_string()),
+        ),
+    }
+}
+
 /// Download + install the manifest-pinned llama-server bundle under
-/// `app_data/bin/llama-server-<tag>/`. Progress on `llm://download`.
+/// `app_data/bin/llama-server-<tag>/`. Progress on `llm://download`;
+/// cancelable via `llm_cancel` (the job is registered with the core
+/// `DownloadManager`, which owns the cancel flag).
 #[tauri::command]
 pub fn llm_install_server(app: AppHandle) -> Result<String, String> {
     let manifest = difflens_core::download::manifest::LlmManifest::embedded();
@@ -577,7 +682,14 @@ pub fn llm_install_server(app: AppHandle) -> Result<String, String> {
 
     let app_task = app.clone();
     let job_id = format!("server-{tag}");
+    // Register before spawning so any `llm_cancel(job_id)` (possible only
+    // after this command returns the id) finds the job. The progress
+    // closure returns `false` when the flag is set, aborting the transfer
+    // cooperatively (core keeps the `.part` for a later resume).
+    let downloads = app.state::<AppState>().llm.downloads.clone();
+    let cancel = downloads.register(&job_id);
     let job_id_thread = job_id.clone();
+    let downloads_task = downloads.clone();
     std::thread::Builder::new()
         .name("difflens-install-server".into())
         .spawn(move || {
@@ -585,20 +697,8 @@ pub fn llm_install_server(app: AppHandle) -> Result<String, String> {
                 let _ = app_task.emit(LLM_DOWNLOAD_EVENT, &p);
             };
             let result = difflens_core::download::download_file(&spec, &mut |done, total| {
-                let percent = total
-                    .map(|t| ((done as f64 / t.max(1) as f64) * 100.0).min(100.0) as u8)
-                    .unwrap_or(0);
-                emit(LlmDownloadPayload {
-                    job_id: job_id_thread.clone(),
-                    kind: "server".into(),
-                    model_id: String::new(),
-                    state: "running".into(),
-                    bytes_done: done,
-                    bytes_total: total,
-                    percent,
-                    error: None,
-                });
-                true
+                emit(running_payload(&job_id_thread, "server", "", done, total));
+                !cancel.load(Ordering::SeqCst)
             })
             .and_then(|archive| {
                 difflens_core::llm::sidecar::install_bundle(
@@ -610,24 +710,12 @@ pub fn llm_install_server(app: AppHandle) -> Result<String, String> {
                 )
             });
 
-            let error = match &result {
-                Ok(_) => {
-                    // Reclaim disk: the verified archive is redundant.
-                    let _ = std::fs::remove_file(&archive_path);
-                    None
-                }
-                Err(difflens_core::CoreError::Cancelled) => Some("cancelled by user".into()),
-                Err(e) => Some(e.to_string()),
-            };
-            let state = if error.is_some() {
-                if error.as_deref() == Some("cancelled by user") {
-                    "cancelled"
-                } else {
-                    "failed"
-                }
-            } else {
-                "done"
-            };
+            if result.is_ok() {
+                // Reclaim disk: the verified archive is redundant.
+                let _ = std::fs::remove_file(&archive_path);
+            }
+            let (state, job_state, error) = download_outcome(&result);
+            downloads_task.finish(&job_id_thread, job_state, error.clone());
             emit(LlmDownloadPayload {
                 job_id: job_id_thread,
                 kind: "server".into(),
@@ -644,7 +732,8 @@ pub fn llm_install_server(app: AppHandle) -> Result<String, String> {
 }
 
 /// Download a manifest-pinned model into `app_data/models/`. Progress on
-/// `llm://download`; cancelable via `llm_cancel`.
+/// `llm://download`; cancelable via `llm_cancel` (same `DownloadManager`
+/// registration as `llm_install_server`).
 #[tauri::command]
 pub fn llm_download_model(model_id: String, app: AppHandle) -> Result<String, String> {
     let manifest = difflens_core::download::manifest::LlmManifest::embedded();
@@ -653,7 +742,7 @@ pub fn llm_download_model(model_id: String, app: AppHandle) -> Result<String, St
         .cloned()
         .ok_or_else(|| format!("unknown model id {model_id:?}"))?;
     let (_, models_dir) = app_paths(&app)?;
-    let dest = models_dir.join(model_file(&model));
+    let dest = models_dir.join(&model.file);
 
     let mut spec =
         difflens_core::download::DownloadSpec::new(model.url.clone(), dest, model.sha256.clone());
@@ -661,7 +750,10 @@ pub fn llm_download_model(model_id: String, app: AppHandle) -> Result<String, St
 
     let app_task = app.clone();
     let job_id = format!("model-{}", model.id);
+    let downloads = app.state::<AppState>().llm.downloads.clone();
+    let cancel = downloads.register(&job_id);
     let job_id_thread = job_id.clone();
+    let downloads_task = downloads.clone();
     let model_id = model.id.clone();
     std::thread::Builder::new()
         .name(format!("difflens-model-{model_id}"))
@@ -670,28 +762,17 @@ pub fn llm_download_model(model_id: String, app: AppHandle) -> Result<String, St
                 let _ = app_task.emit(LLM_DOWNLOAD_EVENT, &p);
             };
             let result = difflens_core::download::download_file(&spec, &mut |done, total| {
-                let percent = total
-                    .map(|t| ((done as f64 / t.max(1) as f64) * 100.0).min(100.0) as u8)
-                    .unwrap_or(0);
-                emit(LlmDownloadPayload {
-                    job_id: job_id_thread.clone(),
-                    kind: "model".into(),
-                    model_id: model_id.clone(),
-                    state: "running".into(),
-                    bytes_done: done,
-                    bytes_total: total,
-                    percent,
-                    error: None,
-                });
-                true
+                emit(running_payload(
+                    &job_id_thread,
+                    "model",
+                    &model_id,
+                    done,
+                    total,
+                ));
+                !cancel.load(Ordering::SeqCst)
             });
-            let (state, error) = match result {
-                Ok(_) => ("done", None),
-                Err(difflens_core::CoreError::Cancelled) => {
-                    ("cancelled", Some("cancelled by user".into()))
-                }
-                Err(e) => ("failed", Some(e.to_string())),
-            };
+            let (state, job_state, error) = download_outcome(&result);
+            downloads_task.finish(&job_id_thread, job_state, error.clone());
             emit(LlmDownloadPayload {
                 job_id: job_id_thread,
                 kind: "model".into(),
@@ -754,7 +835,7 @@ pub fn explain_change(
     let (model_entry, model_path) = manifest
         .models
         .iter()
-        .map(|m| (m.clone(), models_dir.join(model_file(m))))
+        .map(|m| (m.clone(), models_dir.join(&m.file)))
         .find(|(_, p)| p.is_file())
         .ok_or_else(|| "no model downloaded yet; call llm_download_model first".to_string())?;
 
@@ -847,22 +928,15 @@ pub fn explain_change(
     Ok(job_id)
 }
 
-/// Cancel an LLM job: model/server download (`dl-*`/`model-*`/`server-*`
-/// ids) or a running explain job (`explain-*` ids). `true` when found.
+/// Cancel an LLM job: a running explain job (`explain-*` ids) or a
+/// download (`server-*` / `model-*` ids, registered with the core
+/// `DownloadManager`). `true` when a running job was found and flagged.
 #[tauri::command]
 pub fn llm_cancel(job_id: String, state: State<AppState>) -> Result<bool, String> {
     if job_id.starts_with("explain-") {
         return Ok(state.llm.explain.request_cancel(&job_id));
     }
-    if job_id.starts_with("dl-") {
-        return Ok(state.llm.downloads.cancel(&job_id));
-    }
-    // Downloads started through the LLM commands use their own id scheme
-    // but flow through the same core manager; also try it directly.
-    if state.llm.downloads.cancel(&job_id) {
-        return Ok(true);
-    }
-    Ok(false)
+    Ok(state.llm.downloads.cancel(&job_id))
 }
 
 #[cfg(test)]
@@ -1082,5 +1156,93 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn validate_input_file_rejects_bad_paths() {
+        assert!(validate_input_file("").is_err());
+        assert!(validate_input_file("   ").is_err());
+        assert!(validate_input_file("/nonexistent/nope.txt").is_err());
+        let dir = tempfile::tempdir().unwrap();
+        assert!(
+            validate_input_file(dir.path().to_str().unwrap()).is_err(),
+            "a directory is not a readable file"
+        );
+        let file = dir.path().join("doc.txt");
+        std::fs::write(&file, "x").unwrap();
+        assert!(validate_input_file(file.to_str().unwrap()).is_ok());
+    }
+
+    #[test]
+    fn validate_report_target_rejects_bad_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        // Empty, relative, and wrong-extension targets are rejected.
+        assert!(validate_report_target("", "html").is_err());
+        assert!(validate_report_target("report.html", "html").is_err());
+        let wrong_ext = dir.path().join("report.txt");
+        assert!(validate_report_target(wrong_ext.to_str().unwrap(), "html").is_err());
+        // Missing parent directory.
+        let missing_parent = dir.path().join("nope").join("report.html");
+        assert!(validate_report_target(missing_parent.to_str().unwrap(), "html").is_err());
+        // A directory target (even with a matching extension).
+        let weird_dir = dir.path().join("weird.html");
+        std::fs::create_dir(&weird_dir).unwrap();
+        assert!(validate_report_target(weird_dir.to_str().unwrap(), "html").is_err());
+        // Valid targets for both formats; unknown format rejected.
+        let ok_html = dir.path().join("out.html");
+        assert!(validate_report_target(ok_html.to_str().unwrap(), "html").is_ok());
+        let ok_md = dir.path().join("out.md");
+        assert!(validate_report_target(ok_md.to_str().unwrap(), "markdown").is_ok());
+        assert!(validate_report_target(ok_html.to_str().unwrap(), "pdf").is_err());
+    }
+
+    #[test]
+    fn llm_download_cancel_flag_stops_the_progress_closure() {
+        // Mirrors the wiring in `llm_install_server`/`llm_download_model`:
+        // the job is registered with the core download manager and the
+        // progress closure returns `!cancel`; flipping the flag via the
+        // manager makes the closure abort (core then stops the transfer
+        // with `CoreError::Cancelled`).
+        let downloads = difflens_core::download::DownloadManager::new();
+        let cancel = downloads.register("model-unit-test");
+        let mut calls = 0;
+        let mut progress = |done: u64, total: Option<u64>| {
+            let _ = (done, total);
+            calls += 1;
+            !cancel.load(Ordering::SeqCst)
+        };
+        assert!(progress(0, Some(10)), "runs while the flag is clear");
+        assert!(downloads.cancel("model-unit-test"));
+        assert!(!progress(1, Some(10)), "flagged closure must abort");
+        downloads.finish(
+            "model-unit-test",
+            difflens_core::download::JobState::Cancelled,
+            None,
+        );
+        assert!(!downloads.cancel("model-unit-test"));
+        assert_eq!(calls, 2);
+    }
+
+    #[test]
+    fn download_outcome_maps_results_to_terminal_states() {
+        let ok: Result<PathBuf, difflens_core::CoreError> = Ok(PathBuf::from("m.bin"));
+        let (state, job_state, error) = download_outcome(&ok);
+        assert_eq!(state, "done");
+        assert_eq!(job_state, difflens_core::download::JobState::Done);
+        assert!(error.is_none());
+
+        let cancelled: Result<PathBuf, difflens_core::CoreError> =
+            Err(difflens_core::CoreError::Cancelled);
+        let (state, job_state, error) = download_outcome(&cancelled);
+        assert_eq!(state, "cancelled");
+        assert_eq!(job_state, difflens_core::download::JobState::Cancelled);
+        assert_eq!(error.as_deref(), Some("cancelled by user"));
+
+        let failed: Result<PathBuf, difflens_core::CoreError> =
+            Err(difflens_core::CoreError::Download("boom".into()));
+        let (state, job_state, error) = download_outcome(&failed);
+        assert_eq!(state, "failed");
+        assert_eq!(job_state, difflens_core::download::JobState::Failed);
+        assert!(error.is_some());
     }
 }
