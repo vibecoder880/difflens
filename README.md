@@ -31,12 +31,12 @@ your device.
 | Phase | Content | State |
 |-------|---------|-------|
 | 01 | Toolchain, workspace, CI/CD | ✅ |
-| 02 | Extraction (PDF/DOCX/TXT/XLSX/PPTX) | 🚧 |
-| 03 | Diff + 3-pass semantic alignment | 🚧 |
-| 04 | Heuristic intelligence | 🚧 |
-| 05 | llama-server sidecar + explanations | 🚧 |
-| 06 | OCR (experimental) | 🚧 |
-| 07 | Frontend (React/Tailwind/i18n) | 🚧 |
+| 02 | Extraction (PDF/DOCX/TXT/XLSX/PPTX) | ✅ |
+| 03 | Diff + 3-pass semantic alignment | ✅ |
+| 04 | Heuristic intelligence | ✅ |
+| 05 | llama-server sidecar + explanations | ✅ |
+| 06 | OCR (experimental) | ✅ |
+| 07 | Frontend (React/Tailwind/i18n) | ✅ |
 | 08 | Persistence + report export | 🚧 |
 | 09 | Release engineering + docs | 🚧 |
 

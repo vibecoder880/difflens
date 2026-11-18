@@ -184,5 +184,8 @@ jobs:
       - name: install
         run: npm ci
 
+      - name: test (vitest — pure logic + EN/VI i18n parity vs backend label keys)
+        run: npm test
+
       - name: build
         run: npm run build
