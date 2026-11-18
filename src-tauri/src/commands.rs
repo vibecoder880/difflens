@@ -368,21 +368,23 @@ pub fn llm_download_model(model_id: String, app: AppHandle) -> Result<String, St
     spec.expected_bytes = Some(model.bytes);
 
     let app_task = app.clone();
+    let job_id = format!("model-{}", model.id);
+    let job_id_thread = job_id.clone();
+    let model_id = model.id.clone();
     std::thread::Builder::new()
         .name(format!("difflens-model-{model_id}"))
         .spawn(move || {
             let emit = |p: LlmDownloadPayload| {
                 let _ = app_task.emit(LLM_DOWNLOAD_EVENT, &p);
             };
-            let job_id = format!("model-{}", model.id);
             let result = difflens_core::download::download_file(&spec, &mut |done, total| {
                 let percent = total
                     .map(|t| ((done as f64 / t.max(1) as f64) * 100.0).min(100.0) as u8)
                     .unwrap_or(0);
                 emit(LlmDownloadPayload {
-                    job_id: job_id.clone(),
+                    job_id: job_id_thread.clone(),
                     kind: "model".into(),
-                    model_id: model.id.clone(),
+                    model_id: model_id.clone(),
                     state: "running".into(),
                     bytes_done: done,
                     bytes_total: total,
@@ -399,9 +401,9 @@ pub fn llm_download_model(model_id: String, app: AppHandle) -> Result<String, St
                 Err(e) => ("failed", Some(e.to_string())),
             };
             emit(LlmDownloadPayload {
-                job_id,
+                job_id: job_id_thread,
                 kind: "model".into(),
-                model_id: model.id.clone(),
+                model_id,
                 state: state.into(),
                 bytes_done: if state == "done" { model.bytes } else { 0 },
                 bytes_total: Some(model.bytes),
@@ -410,7 +412,7 @@ pub fn llm_download_model(model_id: String, app: AppHandle) -> Result<String, St
             });
         })
         .map_err(|e| format!("spawn download thread: {e}"))?;
-    Ok(format!("model-{}", model.id))
+    Ok(job_id)
 }
 
 /// Explain ONE change of a finished diff job, streaming tokens on
