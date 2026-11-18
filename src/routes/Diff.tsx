@@ -157,7 +157,7 @@ export function DiffPage() {
                 to="/"
                 className="text-xs font-medium text-accent hover:underline"
               >
-                {t("wizard.recent.open")}
+                {t("wizard.compare")}
               </Link>
             </div>
           ) : null}
