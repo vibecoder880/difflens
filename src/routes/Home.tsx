@@ -9,6 +9,7 @@ import { ArrowRight, CircleAlert, GitCompare } from "lucide-react";
 
 import { FilePicker } from "@/components/compare/FilePicker";
 import { JobProgressCard } from "@/components/compare/JobProgressCard";
+import { RecentSessions } from "@/components/history/RecentSessions";
 import { Button } from "@/components/ui/button";
 import { TauriRequiredError, isTauri, pickDocument, runDiff } from "@/lib/tauri";
 import { formatFromExtension } from "@/lib/format";
@@ -171,6 +172,9 @@ export function HomePage() {
         </div>
 
         <JobProgressCard />
+
+        {/* Phase-08: persisted comparison history. */}
+        <RecentSessions />
       </div>
     </div>
   );

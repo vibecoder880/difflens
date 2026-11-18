@@ -9,6 +9,7 @@ import {
   formatDateTime,
   formatDelta,
   formatFromExtension,
+  formatRelativeTime,
   severityStyle,
 } from "./format";
 import type { Severity } from "./types";
@@ -96,6 +97,37 @@ describe("formatDateTime", () => {
 
   it("falls back to the raw string when unparseable", () => {
     expect(formatDateTime("not a date", "en")).toBe("not a date");
+  });
+});
+
+describe("formatRelativeTime", () => {
+  const NOW = Date.parse("2026-11-18T12:00:00Z");
+  const MIN = 60_000;
+  const HOUR = 60 * MIN;
+  const DAY = 24 * HOUR;
+
+  it("renders past times with the right unit", () => {
+    expect(formatRelativeTime(NOW - 30 * MIN, "en", NOW)).toMatch(/30 minutes ago/);
+    expect(formatRelativeTime(NOW - 3 * HOUR, "en", NOW)).toMatch(/3 hours ago/);
+    expect(formatRelativeTime(NOW - 2 * DAY, "en", NOW)).toMatch(/2 days ago/);
+  });
+
+  it("uses larger units as time grows (numeric:auto idiom)", () => {
+    expect(formatRelativeTime(NOW - 40 * DAY, "en", NOW)).toMatch(/month/);
+    expect(formatRelativeTime(NOW - 400 * DAY, "en", NOW)).toMatch(/year/);
+  });
+
+  it("clamps near-now and future timestamps to 'now'", () => {
+    expect(formatRelativeTime(NOW - 10_000, "en", NOW)).toMatch(/now/);
+    expect(formatRelativeTime(NOW + 5 * MIN, "en", NOW)).toMatch(/now/); // clock skew
+  });
+
+  it("localizes to Vietnamese", () => {
+    expect(formatRelativeTime(NOW - 2 * HOUR, "vi", NOW)).toMatch(/2 giờ trước/);
+  });
+
+  it("falls back to the raw value for invalid input", () => {
+    expect(formatRelativeTime(Number.NaN, "en")).toBe(String(Number.NaN));
   });
 });
 

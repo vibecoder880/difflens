@@ -96,6 +96,25 @@
       "cancel": "Cancel"
     }
   },
+  "history": {
+    "title": "Recent comparisons",
+    "subtitle": "Saved on this device",
+    "empty": "No saved comparisons yet — finished comparisons appear here.",
+    "open": "Open comparison",
+    "delete": "Delete",
+    "deleteTitle": "Delete this comparison?",
+    "deleteBody": "The saved result is removed from history. Your original files are not touched.",
+    "confirmDelete": "Delete",
+    "loadError": "Could not load the comparison history"
+  },
+  "export": {
+    "menu": "Export",
+    "html": "HTML report",
+    "markdown": "Markdown report",
+    "saved": "Report saved",
+    "failed": "Export failed",
+    "saving": "Saving…"
+  },
   "diff": {
     "title": "Comparison",
     "loading": "Loading comparison…",

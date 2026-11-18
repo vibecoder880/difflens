@@ -8,6 +8,7 @@ import { FormatBadge, StatChip } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Tooltip } from "@/components/ui/tooltip";
+import { ExportMenu } from "@/components/diff/ExportMenu";
 import { fileBaseName } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import type { JobSnapshot } from "@/lib/types";
@@ -111,6 +112,10 @@ export function DiffHeader({
         ) : null}
 
         <div className="ms-auto flex items-center gap-2">
+          {/* Phase-08: report export for the finished (or hydrated session) view. */}
+          {snapshot.state === "done" && result ? (
+            <ExportMenu targetId={snapshot.job_id} />
+          ) : null}
           {snapshot.state === "done" ? (
             <span className="flex items-center gap-1 text-xs text-insert-fg">
               <CircleCheck aria-hidden className="h-3.5 w-3.5" />

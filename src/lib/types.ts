@@ -82,6 +82,8 @@ export interface DiffResult {
   stats: DiffStats;
   /** Whether real (ort) embeddings were used for alignment. */
   embeddings_used: boolean;
+  /** Whether the experimental OCR fallback contributed any blocks. */
+  ocr_used: boolean;
   audit: AuditEntry[];
 }
 
@@ -189,3 +191,28 @@ export interface OcrStatus {
   langs: string[];
   has_vie: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// Session history (phase-08; core/src/store + commands.rs)
+// ---------------------------------------------------------------------------
+
+/** Row summary from `list_sessions` — no result blob. */
+export interface SessionSummary {
+  id: string;
+  /** Epoch milliseconds. */
+  created_at: number;
+  old_path: string;
+  new_path: string;
+  format: DocFormat;
+  stats: DiffStats;
+  embeddings_used: boolean;
+  ocr_used: boolean;
+}
+
+/** Full stored session from `get_session` (`result` null when corrupt). */
+export interface StoredSession extends SessionSummary {
+  result: DiffResult | null;
+}
+
+/** Report export formats accepted by `export_report`. */
+export type ReportFormat = "html" | "md";

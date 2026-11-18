@@ -96,6 +96,25 @@
       "cancel": "Hủy"
     }
   },
+  "history": {
+    "title": "Phép so sánh gần đây",
+    "subtitle": "Đã lưu trên thiết bị này",
+    "empty": "Chưa có phép so sánh nào được lưu — phép so sánh hoàn tất sẽ xuất hiện tại đây.",
+    "open": "Mở phép so sánh",
+    "delete": "Xóa",
+    "deleteTitle": "Xóa phép so sánh này?",
+    "deleteBody": "Kết quả đã lưu sẽ bị xóa khỏi lịch sử. Các tệp gốc của bạn không bị ảnh hưởng.",
+    "confirmDelete": "Xóa",
+    "loadError": "Không thể tải lịch sử so sánh"
+  },
+  "export": {
+    "menu": "Xuất báo cáo",
+    "html": "Báo cáo HTML",
+    "markdown": "Báo cáo Markdown",
+    "saved": "Đã lưu báo cáo",
+    "failed": "Xuất báo cáo thất bại",
+    "saving": "Đang lưu…"
+  },
   "diff": {
     "title": "Kết quả so sánh",
     "loading": "Đang tải kết quả…",

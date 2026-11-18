@@ -7,7 +7,7 @@
 
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen as tauriListen, type Event, type UnlistenFn } from "@tauri-apps/api/event";
-import { open as dialogOpen } from "@tauri-apps/plugin-dialog";
+import { open as dialogOpen, save as dialogSave } from "@tauri-apps/plugin-dialog";
 import type {
   JobSnapshot,
   LlmDonePayload,
@@ -16,6 +16,9 @@ import type {
   OcrStatus,
   ProgressPayload,
   LlmTokenPayload,
+  ReportFormat,
+  SessionSummary,
+  StoredSession,
 } from "./types";
 
 /** True when running inside the Tauri webview (vs plain browser dev). */
@@ -177,6 +180,73 @@ export async function pickDocument(): Promise<string | null> {
     multiple: false,
     directory: false,
     filters: FILE_FILTERS,
+  });
+  return typeof picked === "string" ? picked : null;
+}
+
+// ---------------------------------------------------------------------------
+// Session history + report export (phase-08)
+// ---------------------------------------------------------------------------
+
+/** Recent comparisons, newest first (`session` rows, no result blobs). */
+export function listSessions(limit = 20, offset = 0): Promise<SessionSummary[]> {
+  return invoke<SessionSummary[]>("list_sessions", { limit, offset });
+}
+
+/** Delete one stored session; `true` when a row was removed. */
+export function deleteSession(sessionId: string): Promise<boolean> {
+  return invoke<boolean>("delete_session", { sessionId });
+}
+
+/** Full stored session incl. the deserialized result (`null` if corrupt). */
+export function getSession(sessionId: string): Promise<StoredSession | null> {
+  return invoke<StoredSession | null>("get_session", { sessionId });
+}
+
+/**
+ * Render a report for `id` (a live `job-*` or persisted `session-*` id)
+ * and write it to `targetPath` (from the save dialog). Returns bytes
+ * written. `lang` picks the report labels (en/vi).
+ */
+export function exportReport(
+  id: string,
+  format: ReportFormat,
+  targetPath: string,
+  lang?: string,
+): Promise<number> {
+  return invoke<number>("export_report", {
+    id,
+    format,
+    targetPath,
+    lang: lang ?? null,
+  });
+}
+
+/** Save-dialog filters per report format. */
+const REPORT_FILTERS: Record<ReportFormat, { name: string; extensions: string[] }> = {
+  html: { name: "HTML report", extensions: ["html"] },
+  md: { name: "Markdown report", extensions: ["md"] },
+};
+
+/** Default export file name from the compared basenames. */
+export function reportFileName(id: string, format: ReportFormat): string {
+  const ext = format === "html" ? "html" : "md";
+  return `difflens-${id.replace(/[^a-zA-Z0-9_-]+/g, "_")}.${ext}`;
+}
+
+/**
+ * Native save dialog for a report export; resolves the chosen path or
+ * null (cancelled). Rust writes the file (plugin-fs is not installed).
+ */
+export async function pickReportSavePath(
+  id: string,
+  format: ReportFormat,
+): Promise<string | null> {
+  if (!isTauri()) throw new TauriRequiredError();
+  const picked = await dialogSave({
+    title: "Export report",
+    defaultPath: reportFileName(id, format),
+    filters: [REPORT_FILTERS[format]],
   });
   return typeof picked === "string" ? picked : null;
 }

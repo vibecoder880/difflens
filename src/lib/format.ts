@@ -112,6 +112,40 @@ export function formatDateTime(input: string | number | Date, locale: string): s
   }).format(date);
 }
 
+/**
+ * Relative time ("3 minutes ago", "2 days ago") via Intl.RelativeTimeFormat.
+ * Future timestamps clamp to "just now". Falls back to the absolute date
+ * when the runtime lacks Intl.RelativeTimeFormat.
+ */
+export function formatRelativeTime(epochMs: number, locale: string, now: number = Date.now()): string {
+  const date = new Date(epochMs);
+  if (Number.isNaN(date.getTime())) return String(epochMs);
+  if (typeof Intl === "undefined" || typeof Intl.RelativeTimeFormat !== "function") {
+    return formatDateTime(date, locale);
+  }
+  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
+  const diffMs = epochMs - now;
+  const absMs = Math.abs(diffMs);
+  // Future timestamps (clock skew) or anything under a minute → "now".
+  if (diffMs > 0 || absMs < 60_000) {
+    return rtf.format(0, "second");
+  }
+  const UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
+    ["year", 365 * 24 * 60 * 60_000],
+    ["month", 30 * 24 * 60 * 60_000],
+    ["week", 7 * 24 * 60 * 60_000],
+    ["day", 24 * 60 * 60_000],
+    ["hour", 60 * 60_000],
+    ["minute", 60_000],
+  ];
+  for (const [unit, ms] of UNITS) {
+    if (absMs >= ms) {
+      return rtf.format(-Math.floor(absMs / ms), unit);
+    }
+  }
+  return rtf.format(0, "second");
+}
+
 // ---------------------------------------------------------------------------
 // Files
 // ---------------------------------------------------------------------------
