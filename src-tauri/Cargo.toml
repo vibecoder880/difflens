@@ -22,3 +22,10 @@ tokio = { version = "1", features = ["process", "macros", "rt-multi-thread", "sy
 [lib]
 name = "difflens_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
+
+[features]
+default = []
+# Real embedding inference (bundled e5-small ONNX). Opt-in until phase-09
+# wires release bundling; without it the app falls back to the fake embedder
+# (DiffResult::embeddings_used = false).
+embeddings-ort = ["difflens-core/embeddings-ort"]
