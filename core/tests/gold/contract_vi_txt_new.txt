@@ -1,0 +1,25 @@
+# Hợp đồng dịch vụ
+
+Văn bản này quy định quyền và nghĩa vụ của các bên ký kết.
+
+## Phụ lục A: Danh sách dịch vụ
+
+Chi tiết các dịch vụ được liệt kê bên dưới.
+
+## Điều 1: Tổng quát
+
+Hai bên cam kết thực hiện đầy đủ các điều khoản đã ký.
+
+Hội thoại hỗ trợ kỹ thuật diễn ra trong giờ hành chính.
+
+## Điều 2: Thanh toán
+
+Tổng giá trị hợp đồng là 12.500.000 đồng.
+
+Thanh toán trong vòng 45 ngày kể từ ngày nhận hóa đơn.
+
+## Điều 3: Bảo mật
+
+Các bên phải bảo mật tuyệt đối thông tin hợp đồng.
+
+Phụ lục có hiệu lực cùng ngày với hợp đồng chính.

@@ -1,0 +1,333 @@
+{
+  "config": {
+    "similarity_threshold": 0.55,
+    "gap_penalty": -0.2,
+    "heading_gap_weight": 1.5,
+    "move_window": 3,
+    "move_similarity_threshold": 0.85,
+    "max_chunk": 2000
+  },
+  "gates": {
+    "real": {
+      "precision_min": 0.85,
+      "recall_min": 0.8
+    },
+    "fake": {
+      "precision_min": 0.8,
+      "recall_min": 0.75
+    }
+  },
+  "cases": [
+    {
+      "name": "contract_en_txt",
+      "old": "contract_en_txt_old.txt",
+      "new": "contract_en_txt_new.txt",
+      "old_blocks": [
+        "Service Agreement",
+        "Introductory paragraph describing the purpose.",
+        "Article 1 Definitions",
+        "The service is provided as-is.",
+        "Support is available on business days.",
+        "Article 2 Payment Terms",
+        "The total price is 12.500.000 VND.",
+        "Payment within 30 days of the invoice date.",
+        "Article 3 Confidentiality",
+        "Both parties keep information secret.",
+        "Article 4 Liability",
+        "Liability is capped at 1,234,567 USD."
+      ],
+      "new_blocks": [
+        "Service Agreement",
+        "Introductory paragraph describing the purpose.",
+        "Article 1 Definitions",
+        "The service is provided as-is with updates.",
+        "Article 2 Payment Terms",
+        "The total price is 15.750.000 VND.",
+        "Payment within 45 days of the invoice date.",
+        "Renewal happens automatically each year.",
+        "Article 3 Confidentiality",
+        "Both parties keep information secret.",
+        "Support is available on business days.",
+        "Article 5 Governing Law",
+        "Disputes follow Vietnamese law courts."
+      ],
+      "aligned": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          3,
+          3
+        ],
+        [
+          4,
+          10
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          8
+        ],
+        [
+          9,
+          9
+        ]
+      ],
+      "moved": [
+        [
+          4,
+          10
+        ]
+      ]
+    },
+    {
+      "name": "contract_vi_txt",
+      "old": "contract_vi_txt_old.txt",
+      "new": "contract_vi_txt_new.txt",
+      "old_blocks": [
+        "Hợp đồng dịch vụ",
+        "Văn bản này quy định quyền và nghĩa vụ của hai bên.",
+        "Điều 1: Tổng quát",
+        "Hai bên cam kết thực hiện đúng các điều khoản.",
+        "Hội thoại hỗ trợ kỹ thuật diễn ra trong giờ hành chính.",
+        "Điều 2: Thanh toán",
+        "Tổng giá trị hợp đồng là 12.500.000 đồng.",
+        "Thanh toán trong vòng 30 ngày kể từ ngày nhận hóa đơn.",
+        "Điều 3: Bảo mật",
+        "Các bên phải bảo mật thông tin của hợp đồng.",
+        "Phụ lục A: Danh sách dịch vụ",
+        "Chi tiết các dịch vụ được liệt kê bên dưới."
+      ],
+      "new_blocks": [
+        "Hợp đồng dịch vụ",
+        "Văn bản này quy định quyền và nghĩa vụ của các bên ký kết.",
+        "Phụ lục A: Danh sách dịch vụ",
+        "Chi tiết các dịch vụ được liệt kê bên dưới.",
+        "Điều 1: Tổng quát",
+        "Hai bên cam kết thực hiện đầy đủ các điều khoản đã ký.",
+        "Hội thoại hỗ trợ kỹ thuật diễn ra trong giờ hành chính.",
+        "Điều 2: Thanh toán",
+        "Tổng giá trị hợp đồng là 12.500.000 đồng.",
+        "Thanh toán trong vòng 45 ngày kể từ ngày nhận hóa đơn.",
+        "Điều 3: Bảo mật",
+        "Các bên phải bảo mật tuyệt đối thông tin hợp đồng.",
+        "Phụ lục có hiệu lực cùng ngày với hợp đồng chính."
+      ],
+      "aligned": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          4
+        ],
+        [
+          3,
+          5
+        ],
+        [
+          4,
+          6
+        ],
+        [
+          5,
+          7
+        ],
+        [
+          6,
+          8
+        ],
+        [
+          7,
+          9
+        ],
+        [
+          8,
+          10
+        ],
+        [
+          9,
+          11
+        ],
+        [
+          10,
+          2
+        ],
+        [
+          11,
+          3
+        ]
+      ],
+      "moved": [
+        [
+          2,
+          4
+        ],
+        [
+          4,
+          6
+        ],
+        [
+          5,
+          7
+        ],
+        [
+          6,
+          8
+        ],
+        [
+          8,
+          10
+        ],
+        [
+          10,
+          2
+        ],
+        [
+          11,
+          3
+        ]
+      ]
+    },
+    {
+      "name": "report_en_docx",
+      "old": "report_en_docx_old.docx",
+      "new": "report_en_docx_new.docx",
+      "old_blocks": [
+        "Quarterly Report",
+        "Revenue grew in the third quarter of the fiscal year.",
+        "Financial Highlights",
+        "Operating costs totaled 8.750.000 EUR in the reporting period.",
+        "Customer retention improved to ninety percent.",
+        "Outlook",
+        "Next quarter focuses on enterprise customers."
+      ],
+      "new_blocks": [
+        "Quarterly Report",
+        "Revenue grew strongly in the third quarter of the fiscal year.",
+        "Financial Highlights",
+        "Operating costs totaled 9.120.000 EUR in the reporting period.",
+        "Customer retention improved to ninety two percent.",
+        "Churn decreased across all market segments.",
+        "Outlook",
+        "Next quarter focuses on enterprise customers and partners."
+      ],
+      "aligned": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          3,
+          3
+        ],
+        [
+          4,
+          4
+        ],
+        [
+          5,
+          6
+        ],
+        [
+          6,
+          7
+        ]
+      ],
+      "moved": []
+    },
+    {
+      "name": "report_vi_docx",
+      "old": "report_vi_docx_old.docx",
+      "new": "report_vi_docx_new.docx",
+      "old_blocks": [
+        "Báo cáo quý",
+        "Doanh thu tăng trưởng ổn định trong ba tháng vừa qua.",
+        "Kết quả tài chính",
+        "Chi phí vận hành đạt 2.450.000 đồng trong kỳ báo cáo.",
+        "Số lượng khách hàng mới tăng đều mỗi tháng.",
+        "Định hướng kỳ tới",
+        "Ưu tiên phát triển kênh khách hàng doanh nghiệp."
+      ],
+      "new_blocks": [
+        "Báo cáo quý",
+        "Doanh thu tăng trưởng ổn định trong ba tháng vừa qua.",
+        "Kết quả tài chính",
+        "Chi phí vận hành đạt 2.450.000 đồng trong kỳ báo cáo.",
+        "Định hướng kỳ tới",
+        "Ưu tiên phát triển kênh khách hàng doanh nghiệp.",
+        "Số lượng khách hàng mới tăng đều mỗi tháng.",
+        "Tỉ lệ giữ chân khách hàng đạt mức cao nhất từ trước tới nay."
+      ],
+      "aligned": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          3,
+          3
+        ],
+        [
+          4,
+          6
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ]
+      ],
+      "moved": [
+        [
+          4,
+          6
+        ]
+      ]
+    }
+  ]
+}

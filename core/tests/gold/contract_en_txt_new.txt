@@ -1,0 +1,25 @@
+# Service Agreement
+
+Introductory paragraph describing the purpose.
+
+## Article 1 Definitions
+
+The service is provided as-is with updates.
+
+## Article 2 Payment Terms
+
+The total price is 15.750.000 VND.
+
+Payment within 45 days of the invoice date.
+
+Renewal happens automatically each year.
+
+## Article 3 Confidentiality
+
+Both parties keep information secret.
+
+Support is available on business days.
+
+## Article 5 Governing Law
+
+Disputes follow Vietnamese law courts.

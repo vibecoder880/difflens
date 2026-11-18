@@ -5,14 +5,13 @@
 
 pub mod align;
 pub mod diff;
+pub mod embeddings;
 pub mod error;
 pub mod extract;
 pub mod heuristic;
 pub mod model;
+pub mod pipeline;
 pub mod store;
-
-#[cfg(feature = "embeddings-ort")]
-pub mod embeddings;
 
 pub mod download;
 pub mod llm;
