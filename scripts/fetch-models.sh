@@ -80,7 +80,12 @@ fetch_one() {
   echo "downloading $rel from pinned commit ${PINNED_COMMIT} …"
   mkdir -p "$(dirname "$dest")"
   # -f: fail on HTTP errors (HF returns HTML error pages otherwise).
-  curl -fL --retry 3 -o "$dest" "$BASE_URL/$rel"
+  # --http1.1: HTTP/2 stream resets (curl 92) are flaky on CI runners for
+  #   large HF files — pin HTTP/1.1.
+  # --retry-all-errors + -C -: retry any failure and resume the partial
+  #   download instead of restarting from byte 0.
+  curl -fL --http1.1 --retry 5 --retry-all-errors --retry-delay 2 -C - \
+    -o "$dest" "$BASE_URL/$rel"
 
   actual_sum="$(sha256sum "$dest" | cut -d' ' -f1)"
   if [ "$actual_sum" != "$expected_sum" ]; then

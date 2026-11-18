@@ -40,12 +40,13 @@ pub fn run_diff(
 
     let job_id_task = job_id.clone();
     let app_task = app.clone();
+    let diff_task = state.diff.clone();
     tauri::async_runtime::spawn(async move {
         execute_job(
             &job_id_task,
             &old_path,
             &new_path,
-            &diff,
+            &diff_task,
             cancel,
             |stage, percent| {
                 let _ = app_task.emit(
