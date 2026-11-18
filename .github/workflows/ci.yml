@@ -71,12 +71,30 @@ jobs:
           fi
 
       - name: clippy (embeddings-ort)
-        run: cargo clippy -p difflens-core --features embeddings-ort --all-targets -- -D warnings
+        # ort-sys downloads prebuilt ONNX Runtime from cdn.pyke.io in its
+        # build script with no retry — transient CDN disconnects happen.
+        # Retry at the step level; the download restarts on each attempt.
+        run: |
+          for attempt in 1 2 3; do
+            if cargo clippy -p difflens-core --features embeddings-ort --all-targets -- -D warnings; then
+              exit 0
+            fi
+            echo "attempt $attempt failed (ort-sys CDN flake?) — retrying in 15s"
+            sleep 15
+          done
+          exit 1
 
       - name: ort smoke test (ignored locally, runs here)
         run: |
           if [ -f scripts/fetch-models.sh ]; then
-            cargo test -p difflens-core --features embeddings-ort -- --ignored embeddings
+            for attempt in 1 2 3; do
+              if cargo test -p difflens-core --features embeddings-ort -- --ignored embeddings; then
+                exit 0
+              fi
+              echo "attempt $attempt failed — retrying in 15s"
+              sleep 15
+            done
+            exit 1
           else
             echo "no model yet; compiling feature gate only"
             cargo check -p difflens-core --features embeddings-ort
