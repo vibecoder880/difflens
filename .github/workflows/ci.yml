@@ -120,6 +120,43 @@ jobs:
       - name: check shell
         run: cargo check -p difflens
 
+  egress-audit:
+    name: Egress audit (HTTP only in download/)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: audit network egress
+        run: scripts/audit-egress.sh
+
+  llm-smoke:
+    name: LLM real roundtrip (llama-server + GGUF, ignored test)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: core
+
+      - name: Real roundtrip (pinned llama-server + 0.6B test GGUF via download manager)
+        # Downloads go over the public internet (GitHub releases + HF) —
+        # retry at the step level for transient CDN flakes.
+        run: |
+          for attempt in 1 2 3; do
+            if cargo test -p difflens-core -- --ignored --nocapture llm_real_roundtrip; then
+              exit 0
+            fi
+            echo "attempt $attempt failed — retrying in 15s"
+            sleep 15
+          done
+          exit 1
+
   frontend:
     name: Frontend (typecheck + build)
     runs-on: ubuntu-24.04
