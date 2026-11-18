@@ -1,0 +1,284 @@
+{
+  "app": {
+    "name": "DiffLens",
+    "tagline": "Local-first document diffing"
+  },
+  "banner": {
+    "browserTitle": "Running in a browser",
+    "browserBody": "DiffLens needs the Tauri desktop runtime for file access and local AI. The interface below is a preview — compare, downloads and live status require the desktop app.",
+    "dismiss": "Dismiss"
+  },
+  "nav": {
+    "label": "Primary",
+    "compare": "Compare",
+    "diff": "Diff",
+    "downloads": "Downloads",
+    "settings": "Settings"
+  },
+  "llmDot": {
+    "ready": "Local AI ready",
+    "partial": "Local AI partially installed",
+    "missing": "Local AI not installed",
+    "running": "Model server running"
+  },
+  "common": {
+    "cancel": "Cancel",
+    "close": "Close",
+    "retry": "Retry",
+    "loading": "Loading…",
+    "error": "Something went wrong",
+    "unknownError": "Unknown error",
+    "requiresTauri": "Requires the DiffLens desktop app",
+    "open": "Open",
+    "notApplicable": "—",
+    "sidebarToggle": "Toggle sidebar"
+  },
+  "severity": {
+    "info": "Info",
+    "low": "Low",
+    "medium": "Medium",
+    "high": "High",
+    "critical": "Critical"
+  },
+  "kind": {
+    "added": "Added",
+    "removed": "Removed",
+    "modified": "Modified",
+    "moved": "Moved",
+    "equal": "Unchanged"
+  },
+  "stage": {
+    "queued": "Queued",
+    "extract": "Extracting",
+    "ocr": "OCR",
+    "align": "Aligning",
+    "diff": "Diffing",
+    "enrich": "Scoring",
+    "done": "Done",
+    "failed": "Failed",
+    "cancelled": "Cancelled"
+  },
+  "jobState": {
+    "running": "Running",
+    "done": "Done",
+    "failed": "Failed",
+    "cancelled": "Cancelled"
+  },
+  "format": {
+    "pdf": "PDF",
+    "docx": "DOCX",
+    "txt": "TXT",
+    "xlsx": "XLSX",
+    "pptx": "PPTX"
+  },
+  "wizard": {
+    "title": "Compare documents",
+    "subtitle": "Pick an old and a new version — everything stays on your machine.",
+    "oldLabel": "Old version",
+    "newLabel": "New version",
+    "oldEmpty": "No file selected",
+    "newEmpty": "No file selected",
+    "choose": "Browse…",
+    "clear": "Clear",
+    "dropHint": "Drop files here",
+    "dropActive": "Release to add",
+    "dropAreaHint": "Tip: drag two files here to fill both slots at once.",
+    "detected": "Format",
+    "unsupported": "Unsupported file type",
+    "compare": "Compare",
+    "comparing": "Starting…",
+    "missing": "Select both files first",
+    "sameFile": "Both slots point to the same file",
+    "recent": {
+      "title": "Current comparison",
+      "empty": "No comparison yet. Pick two files to start.",
+      "open": "Open diff",
+      "cancel": "Cancel"
+    }
+  },
+  "diff": {
+    "title": "Comparison",
+    "loading": "Loading comparison…",
+    "loadError": "Could not load this comparison",
+    "notFound": "Unknown job. It may have been cleared from memory.",
+    "embeddingsOn": "Semantic alignment on",
+    "embeddingsOff": "Semantic alignment off — positional fallback",
+    "embeddingsTip": "Paragraphs are matched by meaning using local embeddings. Without it, blocks are paired by position.",
+    "stats": {
+      "added": "added",
+      "removed": "removed",
+      "modified": "modified",
+      "moved": "moved",
+      "equal": "unchanged"
+    },
+    "overall": "Progress",
+    "running": "Comparing…",
+    "failed": "This comparison failed",
+    "cancelled": "This comparison was cancelled",
+    "empty": "No differences found — the documents match.",
+    "old": "Old",
+    "new": "New",
+    "page": "p. {{page}}",
+    "moveDelta": "Moved {{dx}} pt × {{dy}} pt",
+    "similarity": "{{value}}% match",
+    "context": {
+      "collapsed_one": "{{count}} unchanged block",
+      "collapsed_other": "{{count}} unchanged blocks",
+      "expand": "Show",
+      "collapse": "Hide"
+    },
+    "list": {
+      "title": "Changes",
+      "count": "{{count}} changes",
+      "filters": "Filters",
+      "clear": "Clear filters",
+      "none": "No changes match these filters.",
+      "locate": "Show in diff"
+    },
+    "selectHint": "Select a change to inspect its evidence."
+  },
+  "drawer": {
+    "title": "Change detail",
+    "oldText": "Old text",
+    "newText": "New text",
+    "noText": "No inline text for this change.",
+    "flags": "Signals",
+    "flagsEmpty": "No heuristic rules fired.",
+    "flag": {
+      "old": "Old",
+      "new": "New",
+      "delta": "Delta",
+      "detail": "Detail"
+    },
+    "audit": {
+      "title": "Audit trail",
+      "why": "Why this severity",
+      "rule": "Rule",
+      "ordered": "Rules applied in order; the highest band wins."
+    }
+  },
+  "explain": {
+    "button": "Explain with AI",
+    "disclaimer": "AI-generated, may be wrong",
+    "stop": "Stop",
+    "again": "Explain again",
+    "streaming": "Generating…",
+    "summary": "Summary",
+    "impact": "Impact",
+    "doneIn": "Done in {{seconds}} s",
+    "cancelled": "Explanation stopped.",
+    "errorTitle": "Explanation failed",
+    "needsSetup": "Local AI not installed yet",
+    "needsSetupBody": "Explanations run on your machine through llama.cpp. Install the server and a small model from Downloads to enable this.",
+    "goDownloads": "Open Downloads"
+  },
+  "downloads": {
+    "title": "Downloads",
+    "subtitle": "Local AI components. Downloads are checksum-verified; nothing runs in the cloud.",
+    "server": {
+      "title": "llama-server",
+      "desc": "The inference engine that powers AI explanations, bundled from llama.cpp.",
+      "installed": "Installed",
+      "missing": "Not installed",
+      "onPath": "Found on system PATH",
+      "running": "Running — healthy",
+      "install": "Install",
+      "installing": "Installing…",
+      "versionTag": "llama.cpp {{tag}}"
+    },
+    "model": {
+      "role": {
+        "primary": "Primary",
+        "fallback": "Fallback",
+        "test": "Smoke test"
+      },
+      "download": "Download",
+      "downloading": "Downloading…",
+      "downloaded": "Downloaded",
+      "present": "On disk",
+      "cancel": "Cancel download",
+      "failed": "Download failed",
+      "cancelledState": "Download cancelled",
+      "size": "{{size}} · {{license}}",
+      "shaVerified": "SHA-256 verified",
+      "unverified": "Checksum unverified",
+      "ram": "Needs ≥ {{gb}} GB RAM",
+      "description": {
+        "qwen3-4b-instruct-2507-q4_k_m": "Best quality, strong Vietnamese. Recommended when you have 8 GB RAM or more.",
+        "qwen2.5-3b-instruct-q4_k_m": "Low-RAM fallback for machines with 6–8 GB memory.",
+        "qwen3-0.6b-q8_0-test": "Tiny model used by automated tests. Not useful for real work."
+      }
+    },
+    "progress": {
+      "running": "{{percent}}%",
+      "done": "Done",
+      "failed": "Failed",
+      "cancelled": "Cancelled"
+    },
+    "ocr": {
+      "title": "OCR — scanned PDFs (experimental)",
+      "available": "Tesseract + Vietnamese data detected",
+      "missing": "Tesseract or Vietnamese data not found",
+      "langs": "Languages: {{langs}}",
+      "binary": "Binary: {{path}}",
+      "installHint": "Install tesseract-ocr and tesseract-ocr-vie (system packages) to let DiffLens read scanned PDFs. OCR output is always labelled experimental.",
+      "checking": "Checking tesseract…"
+    }
+  },
+  "settings": {
+    "title": "Settings",
+    "subtitle": "Preferences stay on this device.",
+    "appearance": "Appearance",
+    "theme": {
+      "label": "Theme",
+      "system": "System",
+      "light": "Light",
+      "dark": "Dark"
+    },
+    "language": {
+      "title": "Language",
+      "desc": "Interface language; AI explanations follow this too."
+    },
+    "ocr": {
+      "title": "OCR (experimental)",
+      "enable": "Prefer OCR on scanned pages",
+      "desc": "Scanned PDFs are processed automatically when tesseract with Vietnamese data is installed.",
+      "note": "Every OCR result is labelled experimental."
+    },
+    "embedding": {
+      "title": "Embedding model",
+      "bundled": "e5-small (multilingual) — bundled, nothing to download",
+      "comingSoon": "bge-m3 (higher quality) — opt-in download, coming in v1.1"
+    },
+    "about": {
+      "title": "About",
+      "version": "Version {{version}}",
+      "license": "Released under the MIT License.",
+      "thirdParty": "Third-party component and model licenses ship with the release documentation.",
+      "repo": "vibecoder880/difflens on GitHub"
+    }
+  },
+  "errors": {
+    "invoke": "Operation failed: {{message}}"
+  },
+  "flag": {
+    "moneyChanged": "Money amount changed",
+    "dateChanged": "Date changed",
+    "durationChanged": "Duration changed",
+    "entityAdded": "New value introduced",
+    "entityRemoved": "Value removed",
+    "clauseRenamed": "Clause renamed",
+    "referenceChanged": "Reference number changed",
+    "percentChanged": "Percentage changed",
+    "keywordRisk": "Risky keyword",
+    "unknown": "Unrecognized signal"
+  },
+  "ocr": {
+    "experimental": "Pages extracted via OCR",
+    "confidence": "OCR mean confidence",
+    "pageCap": "OCR page cap reached",
+    "pageFailed": "OCR failed on a page",
+    "unavailable": "OCR unavailable",
+    "unknown": "OCR notice"
+  }
+}

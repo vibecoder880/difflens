@@ -1,0 +1,284 @@
+{
+  "app": {
+    "name": "DiffLens",
+    "tagline": "So sánh tài liệu cục bộ, bảo mật"
+  },
+  "banner": {
+    "browserTitle": "Đang chạy trong trình duyệt",
+    "browserBody": "DiffLens cần môi trường desktop Tauri để truy cập tệp và AI cục bộ. Giao diện dưới đây chỉ là bản xem trước — so sánh, tải xuống và trạng thái trực tiếp cần ứng dụng desktop.",
+    "dismiss": "Ẩn đi"
+  },
+  "nav": {
+    "label": "Chính",
+    "compare": "So sánh",
+    "diff": "Khác biệt",
+    "downloads": "Tải xuống",
+    "settings": "Cài đặt"
+  },
+  "llmDot": {
+    "ready": "AI cục bộ đã sẵn sàng",
+    "partial": "AI cục bộ cài đặt một phần",
+    "missing": "AI cục bộ chưa được cài",
+    "running": "Máy chủ mô hình đang chạy"
+  },
+  "common": {
+    "cancel": "Hủy",
+    "close": "Đóng",
+    "retry": "Thử lại",
+    "loading": "Đang tải…",
+    "error": "Đã xảy ra lỗi",
+    "unknownError": "Lỗi không xác định",
+    "requiresTauri": "Cần ứng dụng desktop DiffLens",
+    "open": "Mở",
+    "notApplicable": "—",
+    "sidebarToggle": "Bật/tắt thanh điều hướng"
+  },
+  "severity": {
+    "info": "Thông tin",
+    "low": "Thấp",
+    "medium": "Trung bình",
+    "high": "Cao",
+    "critical": "Nghiêm trọng"
+  },
+  "kind": {
+    "added": "Thêm mới",
+    "removed": "Đã xóa",
+    "modified": "Đã sửa",
+    "moved": "Đã di chuyển",
+    "equal": "Không đổi"
+  },
+  "stage": {
+    "queued": "Đang chờ",
+    "extract": "Đang trích xuất",
+    "ocr": "OCR",
+    "align": "Đang ghép cặp",
+    "diff": "Đang so sánh",
+    "enrich": "Đánh giá",
+    "done": "Hoàn tất",
+    "failed": "Thất bại",
+    "cancelled": "Đã hủy"
+  },
+  "jobState": {
+    "running": "Đang chạy",
+    "done": "Hoàn tất",
+    "failed": "Thất bại",
+    "cancelled": "Đã hủy"
+  },
+  "format": {
+    "pdf": "PDF",
+    "docx": "DOCX",
+    "txt": "TXT",
+    "xlsx": "XLSX",
+    "pptx": "PPTX"
+  },
+  "wizard": {
+    "title": "So sánh tài liệu",
+    "subtitle": "Chọn bản cũ và bản mới — mọi thứ đều ở lại trên máy của bạn.",
+    "oldLabel": "Bản cũ",
+    "newLabel": "Bản mới",
+    "oldEmpty": "Chưa chọn tệp",
+    "newEmpty": "Chưa chọn tệp",
+    "choose": "Duyệt chọn…",
+    "clear": "Xóa",
+    "dropHint": "Kéo tệp vào đây",
+    "dropActive": "Thả để thêm",
+    "dropAreaHint": "Mẹo: kéo hai tệp vào đây để điền cả hai ô cùng lúc.",
+    "detected": "Định dạng",
+    "unsupported": "Loại tệp không được hỗ trợ",
+    "compare": "So sánh",
+    "comparing": "Đang bắt đầu…",
+    "missing": "Hãy chọn cả hai tệp",
+    "sameFile": "Hai ô đang trỏ cùng một tệp",
+    "recent": {
+      "title": "Phép so sánh hiện tại",
+      "empty": "Chưa có phép so sánh nào. Hãy chọn hai tệp để bắt đầu.",
+      "open": "Mở khác biệt",
+      "cancel": "Hủy"
+    }
+  },
+  "diff": {
+    "title": "Kết quả so sánh",
+    "loading": "Đang tải kết quả…",
+    "loadError": "Không thể tải kết quả này",
+    "notFound": "Không tìm thấy tác vụ. Có thể nó đã bị xóa khỏi bộ nhớ.",
+    "embeddingsOn": "Ghép cặp ngữ nghĩa: bật",
+    "embeddingsOff": "Ghép cặp ngữ nghĩa: tắt (dự phòng theo vị trí)",
+    "embeddingsTip": "Các đoạn văn được ghép theo ý nghĩa bằng embedding cục bộ. Khi tắt, các khối được ghép theo vị trí.",
+    "stats": {
+      "added": "thêm",
+      "removed": "xóa",
+      "modified": "sửa",
+      "moved": "dời",
+      "equal": "không đổi"
+    },
+    "overall": "Tiến độ",
+    "running": "Đang so sánh…",
+    "failed": "Phép so sánh này thất bại",
+    "cancelled": "Phép so sánh này đã bị hủy",
+    "empty": "Không có khác biệt — hai tài liệu trùng nhau.",
+    "old": "Bản cũ",
+    "new": "Bản mới",
+    "page": "tr. {{page}}",
+    "moveDelta": "Dời {{dx}} pt × {{dy}} pt",
+    "similarity": "trùng khớp {{value}}%",
+    "context": {
+      "collapsed_one": "{{count}} khối không đổi",
+      "collapsed_other": "{{count}} khối không đổi",
+      "expand": "Hiện",
+      "collapse": "Ẩn"
+    },
+    "list": {
+      "title": "Các thay đổi",
+      "count": "{{count}} thay đổi",
+      "filters": "Bộ lọc",
+      "clear": "Xóa bộ lọc",
+      "none": "Không thay đổi nào khớp bộ lọc.",
+      "locate": "Xem trong bản so sánh"
+    },
+    "selectHint": "Chọn một thay đổi để xem căn cứ đánh giá."
+  },
+  "drawer": {
+    "title": "Chi tiết thay đổi",
+    "oldText": "Nội dung bản cũ",
+    "newText": "Nội dung bản mới",
+    "noText": "Không có nội dung so sánh chi tiết cho thay đổi này.",
+    "flags": "Tín hiệu",
+    "flagsEmpty": "Không có quy tắc nào được kích hoạt.",
+    "flag": {
+      "old": "Cũ",
+      "new": "Mới",
+      "delta": "Chênh lệch",
+      "detail": "Chi tiết"
+    },
+    "audit": {
+      "title": "Lịch sử kiểm định",
+      "why": "Vì sao ở mức độ này",
+      "rule": "Quy tắc",
+      "ordered": "Các quy tắc được áp dụng theo thứ tự; mức cao nhất được chọn."
+    }
+  },
+  "explain": {
+    "button": "Giải thích bằng AI",
+    "disclaimer": "Do AI tạo ra, có thể sai",
+    "stop": "Dừng",
+    "again": "Giải thích lại",
+    "streaming": "Đang tạo…",
+    "summary": "Tóm tắt",
+    "impact": "Tác động",
+    "doneIn": "Xong trong {{seconds}} s",
+    "cancelled": "Đã dừng giải thích.",
+    "errorTitle": "Giải thích thất bại",
+    "needsSetup": "AI cục bộ chưa được cài",
+    "needsSetupBody": "Phần giải thích chạy trên máy của bạn qua llama.cpp. Hãy cài máy chủ và một mô hình nhỏ trong mục Tải xuống để bật tính năng này.",
+    "goDownloads": "Mở Tải xuống"
+  },
+  "downloads": {
+    "title": "Tải xuống",
+    "subtitle": "Thành phần AI cục bộ. Bản tải xuống được kiểm tra checksum; không có gì chạy trên đám mây.",
+    "server": {
+      "title": "llama-server",
+      "desc": "Công cụ suy luận powering phần giải thích AI, đóng gói từ llama.cpp.",
+      "installed": "Đã cài",
+      "missing": "Chưa cài",
+      "onPath": "Thấy trong PATH hệ thống",
+      "running": "Đang chạy — hoạt động tốt",
+      "install": "Cài đặt",
+      "installing": "Đang cài…",
+      "versionTag": "llama.cpp {{tag}}"
+    },
+    "model": {
+      "role": {
+        "primary": "Chính",
+        "fallback": "Dự phòng",
+        "test": "Kiểm thử"
+      },
+      "download": "Tải xuống",
+      "downloading": "Đang tải…",
+      "downloaded": "Đã tải",
+      "present": "Có trên đĩa",
+      "cancel": "Hủy tải xuống",
+      "failed": "Tải xuống thất bại",
+      "cancelledState": "Đã hủy tải xuống",
+      "size": "{{size}} · {{license}}",
+      "shaVerified": "Đã xác minh SHA-256",
+      "unverified": "Checksum chưa xác minh",
+      "ram": "Cần ≥ {{gb}} GB RAM",
+      "description": {
+        "qwen3-4b-instruct-2507-q4_k_m": "Chất lượng tốt nhất, tiếng Việt mạnh. Khuyên dùng khi có từ 8 GB RAM trở lên.",
+        "qwen2.5-3b-instruct-q4_k_m": "Mô hình dự phòng cho máy 6–8 GB RAM.",
+        "qwen3-0.6b-q8_0-test": "Mô hình siêu nhỏ dùng cho kiểm thử tự động. Không dùng cho việc thực tế."
+      }
+    },
+    "progress": {
+      "running": "{{percent}}%",
+      "done": "Xong",
+      "failed": "Thất bại",
+      "cancelled": "Đã hủy"
+    },
+    "ocr": {
+      "title": "OCR — PDF scan (thử nghiệm)",
+      "available": "Đã thấy Tesseract + dữ liệu tiếng Việt",
+      "missing": "Không thấy Tesseract hoặc dữ liệu tiếng Việt",
+      "langs": "Ngôn ngữ: {{langs}}",
+      "binary": "Tệp thực thi: {{path}}",
+      "installHint": "Cài tesseract-ocr và tesseract-ocr-vie (gói hệ thống) để DiffLens đọc được PDF scan. Kết quả OCR luôn được ghi chú là thử nghiệm.",
+      "checking": "Đang kiểm tra tesseract…"
+    }
+  },
+  "settings": {
+    "title": "Cài đặt",
+    "subtitle": "Tuỳ chọn chỉ lưu trên máy này.",
+    "appearance": "Giao diện",
+    "theme": {
+      "label": "Chủ đề",
+      "system": "Theo hệ thống",
+      "light": "Sáng",
+      "dark": "Tối"
+    },
+    "language": {
+      "title": "Ngôn ngữ",
+      "desc": "Ngôn ngữ giao diện; phần giải thích AI cũng theo ngôn ngữ này."
+    },
+    "ocr": {
+      "title": "OCR (thử nghiệm)",
+      "enable": "Ưu tiên OCR với PDF scan",
+      "desc": "PDF scan được xử lý tự động khi tesseract cùng dữ liệu tiếng Việt đã được cài.",
+      "note": "Mọi kết quả OCR đều được ghi chú là thử nghiệm."
+    },
+    "embedding": {
+      "title": "Mô hình embedding",
+      "bundled": "e5-small (đa ngôn ngữ) — đi kèm, không cần tải",
+      "comingSoon": "bge-m3 (chất lượng cao hơn) — tải tuỳ chọn, sẽ có trong v1.1"
+    },
+    "about": {
+      "title": "Giới thiệu",
+      "version": "Phiên bản {{version}}",
+      "license": "Phát hành theo giấy phép MIT.",
+      "thirdParty": "Giấy phép các thành phần và mô hình bên thứ ba đi kèm tài liệu phát hành.",
+      "repo": "vibecoder880/difflens trên GitHub"
+    }
+  },
+  "errors": {
+    "invoke": "Thao tác thất bại: {{message}}"
+  },
+  "flag": {
+    "moneyChanged": "Số tiền thay đổi",
+    "dateChanged": "Ngày tháng thay đổi",
+    "durationChanged": "Thời hạn thay đổi",
+    "entityAdded": "Giá trị mới xuất hiện",
+    "entityRemoved": "Giá trị bị xóa",
+    "clauseRenamed": "Điều khoản bị đổi tên",
+    "referenceChanged": "Số tham chiếu thay đổi",
+    "percentChanged": "Tỷ lệ phần trăm thay đổi",
+    "keywordRisk": "Từ khóa tiềm ẩn rủi ro",
+    "unknown": "Tín hiệu không nhận dạng được"
+  },
+  "ocr": {
+    "experimental": "Trang được trích xuất qua OCR",
+    "confidence": "Độ tin cậy trung bình của OCR",
+    "pageCap": "Đã đạt giới hạn số trang OCR",
+    "pageFailed": "OCR thất bại trên một trang",
+    "unavailable": "OCR không khả dụng",
+    "unknown": "Thông báo OCR"
+  }
+}

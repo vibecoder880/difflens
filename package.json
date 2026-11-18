@@ -4,8 +4,11 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "predev": "node scripts/export-labels.mjs",
     "dev": "vite",
+    "prebuild": "node scripts/export-labels.mjs",
     "build": "tsc -b && vite build",
+    "test": "node scripts/export-labels.mjs && vitest run",
     "lint": "oxlint",
     "preview": "vite preview"
   },
@@ -35,6 +38,7 @@
     "esbuild": "^0.28.2",
     "oxlint": "^1.90.0",
     "typescript": "^7.0.2",
-    "vite": "^8.3.6"
+    "vite": "^8.3.6",
+    "vitest": "^5.1.1"
   }
 }

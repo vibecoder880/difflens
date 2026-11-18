@@ -1,0 +1,22 @@
+{
+  "generatedBy": "scripts/export-labels.mjs — do not edit by hand",
+  "heuristic": [
+    "flag.clauseRenamed",
+    "flag.dateChanged",
+    "flag.durationChanged",
+    "flag.entityAdded",
+    "flag.entityRemoved",
+    "flag.keywordRisk",
+    "flag.moneyChanged",
+    "flag.percentChanged",
+    "flag.referenceChanged"
+  ],
+  "ocr": [
+    "ocr.confidence",
+    "ocr.experimental",
+    "ocr.pageCap",
+    "ocr.pageFailed",
+    "ocr.unavailable",
+    "ocr.unknown"
+  ]
+}
