@@ -9,7 +9,8 @@
 //!   headless without the manager.
 //! - HTTP via `ureq` (rustls). Streams to `<dest>.part` with HTTP Range
 //!   resume; a server that ignores the range (HTTP 200) restarts from
-//!   scratch; HTTP 416 (stale `.part`) also restarts.
+//!   scratch; HTTP 416 (stale `.part`) restarts exactly once — a second
+//!   416 (on the plain GET) fails the job instead of looping.
 //! - Size caps enforced while streaming; SHA-256 verified against the
 //!   manifest digest before the atomic `.part → dest` rename.
 //! - Cancellation is cooperative: the progress closure returns `false`
@@ -126,7 +127,13 @@ pub fn download_file(spec: &DownloadSpec, progress: &mut ProgressFn) -> CoreResu
         if start_at > 0 {
             req = req.set("Range", &format!("bytes={start_at}-"));
         }
-        let resp = req.call().map_err(|e| map_ureq_error("request", &e))?;
+        // ureq surfaces 4xx/5xx as `Error::Status`; unwrap a 416 so the
+        // restart handling in the match below sees it as a plain status.
+        let resp = match req.call() {
+            Ok(resp) => resp,
+            Err(ureq::Error::Status(416, resp)) => resp,
+            Err(e) => return Err(map_ureq_error("request", &e)),
+        };
         let status = resp.status();
         let content_len: Option<u64> = resp.header("Content-Length").and_then(|v| v.parse().ok());
 
@@ -146,8 +153,16 @@ pub fn download_file(spec: &DownloadSpec, progress: &mut ProgressFn) -> CoreResu
                 break (file, content_len, resp.into_reader());
             }
             // Range not satisfiable (stale .part, artifact rotated on the
-            // server): restart once with a plain GET.
+            // server): restart once with a plain GET. A 416 on the plain
+            // GET itself is fatal — retrying cannot fix a server that
+            // answers 416 unconditionally, so fail instead of looping.
             (_, 416) => {
+                if start_at == 0 {
+                    return Err(CoreError::Download(format!(
+                        "server returned 416 for a full GET: {}",
+                        spec.url
+                    )));
+                }
                 let _ = std::fs::remove_file(&part);
                 start_at = 0;
                 continue;
@@ -300,6 +315,50 @@ impl DownloadManager {
         Self::default()
     }
 
+    /// Register a download whose thread the manager does not own (e.g. the
+    /// Tauri install thread that also extracts the archive after the
+    /// transfer) so `cancel` and `snapshot` see it. Returns the shared
+    /// cancel flag: the download's progress closure must return
+    /// `!flag.load(Ordering::SeqCst)` so a flagged job aborts with
+    /// `CoreError::Cancelled`, and the owner reports the terminal state
+    /// via [`Self::finish`]. Re-registering a still-running job joins the
+    /// existing flag instead of resetting it.
+    pub fn register(&self, job_id: &str) -> Arc<std::sync::atomic::AtomicBool> {
+        let mut jobs = self.jobs.lock().expect("download job map poisoned");
+        if let Some(rec) = jobs.get(job_id)
+            && rec.state == JobState::Running
+        {
+            return rec.cancel.clone();
+        }
+        let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let record = JobRecord {
+            state: JobState::Running,
+            cancel: cancel.clone(),
+            bytes_done: Arc::new(AtomicU64::new(0)),
+            bytes_total: Mutex::new(None),
+            dest: None,
+            error: None,
+        };
+        jobs.insert(job_id.to_string(), record);
+        cancel
+    }
+
+    /// Record the terminal state of an externally-run job (`Done`,
+    /// `Failed`, or `Cancelled`) so `cancel` stops flagging it. No-op for
+    /// unknown ids, already-terminal jobs, or a `Running` argument.
+    pub fn finish(&self, job_id: &str, state: JobState, error: Option<String>) {
+        if state == JobState::Running {
+            return;
+        }
+        let mut jobs = self.jobs.lock().expect("download job map poisoned");
+        if let Some(rec) = jobs.get_mut(job_id)
+            && rec.state == JobState::Running
+        {
+            rec.state = state;
+            rec.error = error;
+        }
+    }
+
     /// Start a background download. Progress is forwarded to `on_progress`
     /// (invoked on the download thread). Returns the job id immediately.
     pub fn start(
@@ -427,8 +486,10 @@ mod tests {
                             }
                         }
                         if start >= body.len() {
-                            let head =
-                                "HTTP/1.1 416 Range Not Satisfiable\r\nContent-Length: 0\r\n\r\n";
+                            // Connection: close (like the 200 path) so the
+                            // client does not reuse this socket after the
+                            // restart-triggering 416.
+                            let head = "HTTP/1.1 416 Range Not Satisfiable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
                             std::io::Write::write_all(&mut stream, head.as_bytes()).ok();
                             continue;
                         }
@@ -580,6 +641,87 @@ mod tests {
     }
 
     #[test]
+    fn external_job_registration_supports_cancel_and_finish() {
+        // Simulates the Tauri side: a download whose thread the manager
+        // does not own; cancel flags it, finish records the outcome.
+        let mgr = DownloadManager::new();
+        let flag = mgr.register("model-test");
+        assert_eq!(mgr.snapshot("model-test").unwrap().state, JobState::Running);
+        // Re-registering while running joins the same flag.
+        assert!(Arc::ptr_eq(&flag, &mgr.register("model-test")));
+        assert!(mgr.cancel("model-test"));
+        assert!(flag.load(Ordering::SeqCst));
+
+        mgr.finish("model-test", JobState::Failed, Some("boom".into()));
+        let snap = mgr.snapshot("model-test").unwrap();
+        assert_eq!(snap.state, JobState::Failed);
+        assert_eq!(snap.error.as_deref(), Some("boom"));
+
+        // Terminal is sticky; cancel on a finished job is a no-op.
+        mgr.finish("model-test", JobState::Done, None);
+        assert_eq!(mgr.snapshot("model-test").unwrap().state, JobState::Failed);
+        assert!(!mgr.cancel("model-test"));
+
+        // Unknown ids and a `Running` "finish" are no-ops.
+        mgr.finish("missing", JobState::Done, None);
+        assert!(mgr.snapshot("missing").is_none());
+        let flag2 = mgr.register("model-other");
+        mgr.finish("model-other", JobState::Running, None);
+        assert_eq!(
+            mgr.snapshot("model-other").unwrap().state,
+            JobState::Running
+        );
+        assert!(mgr.cancel("model-other"));
+        assert!(flag2.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn registered_external_download_aborts_on_cancel() {
+        // End-to-end cancel wiring proof: an externally-run download_file
+        // whose progress closure returns `!flag` stops with `Cancelled`
+        // when the manager flags the job.
+        let body = b"x".to_vec();
+        let sha = checksum::sha256_bytes(&body);
+        let server = LoopbackServer::spawn(body, false);
+        let dir = tempfile::tempdir().unwrap();
+        let spec = spec_for(
+            format!("http://{}/f", server.addr),
+            dir.path().join("m.bin"),
+            sha,
+            1,
+        );
+        let mgr = Arc::new(DownloadManager::new());
+        let job_id = "model-cancelable".to_string();
+        let flag = mgr.register(&job_id);
+        // Deterministic ordering: the canceller fires only after the
+        // transfer reached its first progress call (`entered`), and the
+        // progress closure only returns after the flag is set (`spin`) —
+        // so the very first callback aborts the transfer.
+        let entered = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let mgr2 = mgr.clone();
+        let entered2 = entered.clone();
+        let job_id_cancel = job_id.clone();
+        let canceller = std::thread::spawn(move || {
+            while !entered2.load(Ordering::SeqCst) {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            assert!(mgr2.cancel(&job_id_cancel));
+        });
+        let outcome = download_file(&spec, &mut |_, _| {
+            entered.store(true, Ordering::SeqCst);
+            while !flag.load(Ordering::SeqCst) {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            false
+        });
+        canceller.join().unwrap();
+        assert!(matches!(outcome, Err(CoreError::Cancelled)));
+
+        mgr.finish(&job_id, JobState::Cancelled, None);
+        assert_eq!(mgr.snapshot(&job_id).unwrap().state, JobState::Cancelled);
+    }
+
+    #[test]
     fn oversized_part_is_discarded_on_resume() {
         let body = b"short".to_vec();
         let sha = checksum::sha256_bytes(&body);
@@ -595,5 +737,81 @@ mod tests {
         spec.max_bytes = 1024 * 1024;
         download_file(&spec, &mut |_, _| true).unwrap();
         assert_eq!(std::fs::read(&dest).unwrap(), b"short");
+    }
+
+    #[test]
+    fn stale_part_416_restarts_once_and_succeeds() {
+        // Range request past EOF → 416 once, then the plain GET succeeds.
+        let body = b"0123456789".to_vec();
+        let sha = checksum::sha256_bytes(&body);
+        let server = LoopbackServer::spawn(body, true);
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("m.bin");
+        // Stale part: its length equals (>=) the new artifact size, so the
+        // ranged resume is not satisfiable.
+        std::fs::write(dest.with_file_name("m.bin.part"), b"0123456789").unwrap();
+        let spec = spec_for(format!("http://{}/f", server.addr), dest.clone(), sha, 10);
+        download_file(&spec, &mut |_, _| true).unwrap();
+        assert_eq!(std::fs::read(&dest).unwrap(), b"0123456789");
+        assert!(!dest.with_file_name("m.bin.part").exists());
+    }
+
+    /// Server that answers every request with 416 (broken or hostile).
+    /// One response per connection (`Connection: close`) so the client
+    /// never reuses a socket the server has already abandoned.
+    struct Always416Server {
+        addr: String,
+    }
+
+    impl Always416Server {
+        fn spawn() -> Self {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let addr = listener.local_addr().unwrap().to_string();
+            std::thread::spawn(move || {
+                for stream in listener.incoming() {
+                    let Ok(mut stream) = stream else { break };
+                    let head = "HTTP/1.1 416 Range Not Satisfiable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+                    std::io::Write::write_all(&mut stream, head.as_bytes()).ok();
+                }
+            });
+            Self { addr }
+        }
+    }
+
+    #[test]
+    fn persistent_416_fails_instead_of_looping_forever() {
+        // Seeded part → first (ranged) GET hits 416 and restarts; the
+        // second (plain) GET hits 416 again → must error, not loop.
+        let server = Always416Server::spawn();
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("m.bin");
+        std::fs::write(dest.with_file_name("m.bin.part"), b"stale-part").unwrap();
+        let spec = DownloadSpec::new(
+            format!("http://{}/f", server.addr),
+            dest.clone(),
+            checksum::sha256_bytes(b"whatever"),
+        );
+        let err = download_file(&spec, &mut |_, _| true).unwrap_err();
+        assert!(
+            err.to_string().contains("416 for a full GET"),
+            "unexpected error: {err}"
+        );
+        // The failed attempt removes the stale part (restart path ran once).
+        assert!(!dest.with_file_name("m.bin.part").exists());
+    }
+
+    #[test]
+    fn plain_get_416_fails_immediately() {
+        // No part at all: the very first request is a plain GET; a 416
+        // answer must fail the job on the spot.
+        let server = Always416Server::spawn();
+        let dir = tempfile::tempdir().unwrap();
+        let spec = DownloadSpec::new(
+            format!("http://{}/f", server.addr),
+            dir.path().join("m.bin"),
+            checksum::sha256_bytes(b"whatever"),
+        );
+        let err = download_file(&spec, &mut |_, _| true).unwrap_err();
+        assert!(err.to_string().contains("416 for a full GET"), "{err}");
     }
 }
