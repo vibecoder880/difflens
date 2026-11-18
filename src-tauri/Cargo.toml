@@ -1,0 +1,24 @@
+[package]
+name = "difflens"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "DiffLens desktop app (Tauri shell)"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2.12", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-shell = "2"
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+difflens-core = { path = "../core" }
+tokio = { version = "1", features = ["process", "macros", "rt-multi-thread", "sync", "time"] }
+
+[lib]
+name = "difflens_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]

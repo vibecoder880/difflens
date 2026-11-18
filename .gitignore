@@ -1,0 +1,40 @@
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Rust
+target/
+**/target/
+Cargo.lock.bak
+
+# Tauri
+src-tauri/gen/
+
+# Models & downloaded binaries (user-downloaded, never committed)
+resources/models/
+resources/binaries/
+*.gguf
+*.onnx
+!src-tauri/resources/*.sha256
+
+# Env & local
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+!.vscode/extensions.json
+
+# Logs
+*.log
+npm-debug.log*
+
+# Coverage
+coverage/

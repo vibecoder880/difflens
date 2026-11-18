@@ -1,0 +1,29 @@
+[workspace]
+resolver = "2"
+members = ["core", "src-tauri"]
+
+[workspace.package]
+version = "1.0.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+repository = "https://github.com/vibecoder880/difflens"
+description = "Local-first, cross-platform document diffing with semantic alignment"
+
+# Versions pinned per plans/20261117-difflens/research/researcher-01-stack-report.md
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+zip = "9.7"
+roxmltree = "0.21"
+calamine = "0.38"
+similar = "3.2"
+strsim = "0.11"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

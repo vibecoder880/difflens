@@ -1,0 +1,21 @@
+@import "tailwindcss";
+
+/* DiffLens design tokens (refined in phase-07) */
+:root {
+  --dl-bg: #fafafa;
+  --dl-fg: #18181b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --dl-bg: #0f0f10;
+    --dl-fg: #f4f4f5;
+  }
+}
+
+body {
+  margin: 0;
+  background: var(--dl-bg);
+  color: var(--dl-fg);
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
