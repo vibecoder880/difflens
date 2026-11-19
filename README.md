@@ -4,6 +4,9 @@
 [![Release](https://github.com/vibecoder880/difflens/actions/workflows/release.yml/badge.svg)](https://github.com/vibecoder880/difflens/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
+📚 **Documentation:** full docs at <https://vibecoder880.github.io/difflens/> ·
+Wiki: <https://github.com/vibecoder880/difflens/wiki>
+
 **Local-first, cross-platform document diffing with semantic alignment.**
 
 DiffLens compares two documents — PDF, DOCX, TXT, XLSX, PPTX — entirely on
@@ -211,6 +214,20 @@ considered v2 improvement.
 | 09 | Release engineering + docs | ✅ |
 
 Release acceptance evidence: [`scripts/release-checklist.md`](scripts/release-checklist.md).
+
+## Documentation
+
+| Document | Contents |
+|---|---|
+| [Docs site](https://vibecoder880.github.io/difflens/) (mdBook) | full manual: intro, install, quickstart, user guide, how-it-works, AI setup, OCR, privacy, architecture, building, FAQ, changelog |
+| [Wiki: Installation](https://github.com/vibecoder880/difflens/wiki/Installation) | per-OS installers, Gatekeeper/SmartScreen notes, SHA-256 verification |
+| [Wiki: User Guide](https://github.com/vibecoder880/difflens/wiki/User-Guide) | the four screens in depth (compare wizard, diff view, downloads, settings) |
+| [Wiki: How Diffing Works](https://github.com/vibecoder880/difflens/wiki/How-Diffing-Works) | extraction, 3-pass semantic alignment, deterministic heuristics, severity bands |
+| [Wiki: AI Explanations Setup](https://github.com/vibecoder880/difflens/wiki/AI-Explanations-Setup) | llama-server sidecar, model downloads, privacy properties |
+| [Wiki: Privacy and Security](https://github.com/vibecoder880/difflens/wiki/Privacy-and-Security) | the local-first threat model and download integrity chain |
+| [Wiki: Architecture](https://github.com/vibecoder880/difflens/wiki/Architecture) | workspace layout, tech stack table, Tauri command/event surface |
+| [Wiki: Building from Source](https://github.com/vibecoder880/difflens/wiki/Building-from-Source) | toolchain, feature flags, test tiers |
+| [Wiki: FAQ](https://github.com/vibecoder880/difflens/wiki/FAQ) | twelve common questions |
 
 ## Contributing
 
