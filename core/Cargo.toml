@@ -18,6 +18,11 @@ strsim.workspace = true
 ureq = { version = "2", features = ["json", "gzip"] }
 sha2 = "0.10"
 hex = "0.4"
+# CSPRNG for the per-session llama-server API key (review P2-10).
+# MIT OR Apache-2.0 — consistent with the workspace licensing.
+getrandom = "0.3"
+# OCR temp images: NamedTempFile (0600 perms on unix, Drop-cleanup).
+tempfile = "3"
 rusqlite = { version = "0.32", features = ["bundled"] }
 regex = "1"
 
@@ -42,7 +47,6 @@ default = []
 embeddings-ort = ["ort", "tokenizers"]
 
 [dev-dependencies]
-tempfile = "3"
 serde_json.workspace = true
 # Integration tests craft zip/tar.gz fixtures with the same crates the
 # library uses.

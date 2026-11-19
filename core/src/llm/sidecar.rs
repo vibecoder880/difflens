@@ -3,8 +3,14 @@
 //!
 //! Security posture:
 //! - The server is always launched **by absolute path** (no PATH
-//!   shadowing) with `--host 127.0.0.1` and a **random per-session
-//!   `--api-key`** (in-memory only). A random ephemeral port comes from
+//!   shadowing) with `--host 127.0.0.1` and a **random per-session API
+//!   key** generated from the OS CSPRNG. The key is handed to the server
+//!   via the `LLAMA_API_KEY` environment variable — **never argv** — so
+//!   it does not appear in process listings (`ps`, `/proc/<pid>/cmdline`)
+//!   visible to other local users. Verified against the pinned build:
+//!   llama.cpp b12503 `llama-server --help` documents
+//!   `--api-key KEY (env: LLAMA_API_KEY)`; env hand-off is the documented
+//!   same-process configuration path. A random ephemeral port comes from
 //!   `--port 0` (verified working on the pinned build; the bind line is
 //!   parsed from the startup log).
 //! - `/health` is polled with the key until `{"status":"ok"}`.
@@ -19,7 +25,6 @@
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
@@ -164,24 +169,31 @@ pub fn parse_port_from_log(log: &str) -> Option<u16> {
     caps.get(1)?.as_str().parse().ok()
 }
 
-/// Generate a random per-session API key without external crates: SHA-256
-/// over high-resolution time, pid, an ASLR-derived stack address and a
-/// process-global counter (32 hex chars). Loopback-only session secret —
-/// entropy requirements are modest; this is not a password.
+/// Generate a random per-session API key: 32 bytes from the OS CSPRNG
+/// (`getrandom`), hex-encoded → 64 chars. Single call, no counters or
+/// wall-clock material — keys cannot be predicted even when start time,
+/// pid and ASLR layout are known (fixes review finding P2-10).
+/// Loopback-only session secret — this is not a password.
 pub fn random_api_key() -> String {
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-    let nonce = COUNTER.fetch_add(1, Ordering::SeqCst);
-    let marker = 0u8;
-    let material = format!(
-        "{:?}|{}|{:p}|{nonce}",
-        SystemTime::now(),
-        std::process::id(),
-        &marker as *const u8, // ASLR-derived address entropy
-    );
-    use sha2::{Digest, Sha256};
-    let mut h = Sha256::new();
-    h.update(material.as_bytes());
-    hex::encode(&h.finalize()[..16])
+    let mut bytes = [0u8; 32];
+    if getrandom::fill(&mut bytes).is_err() {
+        // OS entropy source broken (essentially unreachable on supported
+        // platforms): degrade to hashed time/pid/ASLR material rather
+        // than panic or emit a constant — the key stays unpredictable to
+        // any other process even in this degraded mode.
+        let marker = 0u8;
+        let material = format!(
+            "{:?}|{}|{:p}",
+            SystemTime::now(),
+            std::process::id(),
+            &marker as *const u8, // ASLR-derived address entropy
+        );
+        use sha2::{Digest, Sha256};
+        let mut h = Sha256::new();
+        h.update(material.as_bytes());
+        bytes.copy_from_slice(&h.finalize()); // SHA-256 output is 32 bytes
+    }
+    hex::encode(bytes)
 }
 
 /// Configuration for one sidecar spawn.
@@ -235,8 +247,10 @@ impl SidecarProcess {
             .arg("127.0.0.1")
             .arg("--port")
             .arg(cfg.port.to_string())
-            .arg("--api-key")
-            .arg(&api_key)
+            // API key via the `LLAMA_API_KEY` environment variable (the
+            // pinned build's documented hand-off; see the module docs) so
+            // the secret never appears in argv / process listings.
+            .env("LLAMA_API_KEY", &api_key)
             .arg("-c")
             .arg(cfg.context_size.to_string())
             .arg("-ngl")
@@ -391,6 +405,14 @@ struct ActiveServer {
     process: Arc<SidecarProcess>,
 }
 
+/// Map a poisoned manager lock to an error instead of panicking (review
+/// P2-9 spirit: no panics on command-reachable paths).
+fn manager_poison(
+    e: std::sync::PoisonError<std::sync::MutexGuard<'_, Option<ActiveServer>>>,
+) -> CoreError {
+    CoreError::Llm(format!("sidecar manager lock poisoned: {e}"))
+}
+
 impl SidecarManager {
     pub fn new() -> Self {
         Self::default()
@@ -398,26 +420,63 @@ impl SidecarManager {
 
     /// Return a healthy server for `cfg`, spawning one if needed. Reuses
     /// the running server when it serves the same model file.
+    ///
+    /// Lock discipline (review P2-4): the manager mutex is only held for
+    /// short decision/swap sections — never across
+    /// [`SidecarProcess::spawn`], which blocks for up to
+    /// [`SPAWN_DEADLINE`] while the model loads. [`Self::active_info`]
+    /// (polled by the UI status command) therefore never stalls behind a
+    /// spawn. Two concurrent `ensure_running` calls could each spawn in
+    /// the unlocked window; the second swap-in replaces the first and the
+    /// losing child is killed by Kill-on-Drop (previously the lock
+    /// serialized callers — the app only spawns from a single command
+    /// path, so this window is theoretical).
     pub fn ensure_running(&self, cfg: &SidecarConfig) -> CoreResult<Arc<SidecarProcess>> {
-        let mut guard = self.active.lock().expect("sidecar manager lock poisoned");
-        if let Some(active) = guard.as_ref() {
-            if active.process.is_alive()
-                && active.process.model_path == cfg.model_path
-                && active
-                    .process
-                    .client()
-                    .map(|c| c.is_healthy())
-                    .unwrap_or(false)
-            {
-                return Ok(active.process.clone());
+        // Phase 1 (short lock): decide whether the active server is
+        // reusable and clone its handle out. The bounded /health probe
+        // here targets an already-running server (sub-ms on loopback),
+        // unlike a spawn.
+        let reusable = {
+            let guard = self.active.lock().map_err(manager_poison)?;
+            match guard.as_ref() {
+                Some(active) => {
+                    if active.process.is_alive()
+                        && active.process.model_path == cfg.model_path
+                        && active
+                            .process
+                            .client()
+                            .map(|c| c.is_healthy())
+                            .unwrap_or(false)
+                    {
+                        Some(active.process.clone())
+                    } else {
+                        None
+                    }
+                }
+                None => None,
             }
-            // Stale or wrong model: replace.
-            active.process.kill();
+        };
+        if let Some(process) = reusable {
+            return Ok(process);
         }
+        // Phase 2 (short lock): retire the stale / wrong-model server.
+        {
+            let mut guard = self.active.lock().map_err(manager_poison)?;
+            if let Some(active) = guard.take() {
+                active.process.kill();
+            }
+        }
+        // Phase 3 (NO lock held): spawn + health-poll, up to
+        // SPAWN_DEADLINE. `active_info()` stays responsive throughout.
         let process = Arc::new(SidecarProcess::spawn(cfg)?);
-        *guard = Some(ActiveServer {
-            process: process.clone(),
-        });
+        // Phase 4 (short lock): swap the fresh server in. Dropping any
+        // value a racing caller installed kills its child (Kill-on-Drop).
+        {
+            let mut guard = self.active.lock().map_err(manager_poison)?;
+            *guard = Some(ActiveServer {
+                process: process.clone(),
+            });
+        }
         Ok(process)
     }
 
@@ -475,9 +534,11 @@ mod tests {
     fn api_key_is_hex_and_unique_per_call() {
         let a = random_api_key();
         let b = random_api_key();
-        assert_eq!(a.len(), 32);
+        // 32 CSPRNG bytes hex-encoded (review P2-10).
+        assert_eq!(a.len(), 64);
         assert_ne!(a, b);
         assert!(a.chars().all(|c| c.is_ascii_hexdigit()));
+        assert!(b.chars().all(|c| c.is_ascii_hexdigit()));
     }
 
     #[test]
