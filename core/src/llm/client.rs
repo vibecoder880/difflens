@@ -3,9 +3,12 @@
 //!
 //! Security invariants (red-team SEC3):
 //! - **Loopback-only**: [`LlmClient::new`] hard-rejects any base URL whose
-//!   host is not `127.0.0.1` / `localhost` / `[::1]` — the sidecar must
-//!   never be reachable from outside the machine, and the client must
-//!   never point anywhere else. Unit-tested.
+//!   host is not the literal `127.0.0.1` / `::1` (`[::1]`) — DNS names
+//!   (`localhost` included) are rejected because their resolution depends
+//!   on the host resolver, which a hostile resolver could point elsewhere
+//!   while the client attaches `Authorization: Bearer <session key>`.
+//!   The sidecar must never be reachable from outside the machine, and
+//!   the client must never point anywhere else. Unit-tested.
 //! - **API key in memory only**: the optional bearer token lives inside
 //!   this struct for the process lifetime, is never persisted, and
 //!   defaults to none (local server without a key).
@@ -23,6 +26,13 @@ use crate::error::{CoreError, CoreResult};
 /// Default overall request timeout (prompt processing on CPU can be slow;
 /// still a hard bound, unlike no timeout at all).
 pub const DEFAULT_OVERALL_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// Hard cap for the assistant text accumulated from one streamed
+/// completion. A misbehaving (or compromised) server can ignore
+/// `max_tokens`; without this bound every token grows the buffer until
+/// the request timeout. Well beyond anything the 512-token explanations
+/// produce, yet bounded (~256 KiB per request).
+pub const MAX_EXPLANATION_BYTES: usize = 256 * 1024;
 
 /// One chat message.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -194,6 +204,11 @@ impl LlmClient {
                         if !on_token(&tok) {
                             return Err(CoreError::Cancelled);
                         }
+                        if text.len() + tok.len() > MAX_EXPLANATION_BYTES {
+                            // Checked before pushing: accumulated text
+                            // never exceeds the cap plus one token.
+                            return Err(CoreError::Llm("explanation exceeded size limit".into()));
+                        }
                         text.push_str(&tok);
                     }
                     SseEvent::Finished(reason) => finish_reason = reason,
@@ -221,9 +236,13 @@ impl LlmClient {
 }
 
 /// Reject any base URL that is not loopback. Accepts `http://` and
-/// `https://` schemes; host must be `127.0.0.1`, `localhost`, or `[::1]`.
-/// Note `0.0.0.0` is deliberately rejected (it is an exposed interface,
-/// not a loopback).
+/// `https://` schemes; host must be the **literal** `127.0.0.1` or
+/// `[::1]` / `::1`. DNS names — `localhost` included — are deliberately
+/// rejected: resolution depends on the host resolver, and a hostile
+/// resolver could answer `localhost` (or any name we might later accept)
+/// with a non-loopback address while the client sends the session bearer
+/// key. Note `0.0.0.0` is also rejected (it is an exposed interface, not
+/// a loopback).
 pub fn validate_loopback(base_url: &str) -> CoreResult<()> {
     let url = base_url.trim();
     let (scheme, rest) = match url.split_once("://") {
@@ -253,7 +272,8 @@ pub fn validate_loopback(base_url: &str) -> CoreResult<()> {
         }
     };
     let host = host.trim_matches(['[', ']']).to_ascii_lowercase();
-    if matches!(host.as_str(), "127.0.0.1" | "localhost" | "::1") {
+    // Literal addresses only — no DNS names (see the doc comment above).
+    if matches!(host.as_str(), "127.0.0.1" | "::1") {
         return Ok(());
     }
     Err(CoreError::Llm(format!(
@@ -390,23 +410,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn loopback_guard_accepts_local_hosts() {
+    fn loopback_guard_accepts_literal_loopback_hosts() {
         for url in [
             "http://127.0.0.1:8080",
-            "http://localhost:1234",
-            "http://localhost",
             "http://[::1]:9931",
+            "http://[::1]",
             "https://127.0.0.1:8080",
             "http://127.0.0.1/v1",
-            "http://LOCALHOST:80",
         ] {
             assert!(validate_loopback(url).is_ok(), "should accept {url}");
         }
     }
 
     #[test]
-    fn loopback_guard_rejects_remote_and_garbage() {
+    fn loopback_guard_rejects_remote_dns_and_garbage() {
         for url in [
+            // DNS names are rejected outright — `localhost` resolution
+            // depends on the host resolver and could be poisoned (P2-2).
+            "http://localhost:1234",
+            "http://localhost",
+            "http://LOCALHOST:80",
             "http://example.com",
             "https://api.openai.com/v1",
             "http://0.0.0.0:9931",
@@ -504,5 +527,70 @@ mod tests {
             evs,
             vec![SseEvent::Finished(Some("stop".to_string())), SseEvent::Done]
         );
+    }
+
+    /// Fake SSE server: keeps streaming tokens (well past the 256 KiB
+    /// cap) until the client disconnects. Loopback-only, no [DONE] ever.
+    struct RunawaySseServer {
+        addr: String,
+    }
+
+    impl RunawaySseServer {
+        fn spawn() -> Self {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let addr = listener.local_addr().unwrap().to_string();
+            std::thread::spawn(move || {
+                let Ok((mut stream, _)) = listener.accept() else {
+                    return;
+                };
+                let mut buf = [0u8; 4096];
+                let _ = std::io::Read::read(&mut stream, &mut buf);
+                let head = concat!(
+                    "HTTP/1.1 200 OK\r\n",
+                    "Content-Type: text/event-stream\r\n",
+                    "Connection: close\r\n\r\n"
+                );
+                use std::io::Write;
+                if stream.write_all(head.as_bytes()).is_err() {
+                    return;
+                }
+                let frame = concat!(
+                    "data: {\"choices\":[{\"delta\":{\"content\":\"",
+                    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                    "\"}}]}\n\n"
+                );
+                for _ in 0..100_000 {
+                    // Breaks out once the client drops the connection
+                    // (the cap error path under test).
+                    if stream.write_all(frame.as_bytes()).is_err() {
+                        break;
+                    }
+                }
+            });
+            Self { addr }
+        }
+    }
+
+    #[test]
+    fn chat_stream_errors_when_text_exceeds_cap() {
+        let server = RunawaySseServer::spawn();
+        let client = LlmClient::new(&format!("http://{}", server.addr)).unwrap();
+        let opts = ChatOptions::default();
+        let mut delivered = 0usize;
+        let err = client
+            .chat_stream(&[ChatMessage::user("hi")], &opts, &mut |_| {
+                delivered += 1;
+                true
+            })
+            .unwrap_err();
+        assert!(
+            matches!(err, CoreError::Llm(ref m) if m.contains("explanation exceeded size limit")),
+            "unexpected error: {err}"
+        );
+        // The stream was live (tokens flowed) before the cap tripped.
+        assert!(delivered > 0);
+        // The cap (plus one in-flight token) bounds the buffer — nothing
+        // here can hold 100k frames' worth of text.
     }
 }
