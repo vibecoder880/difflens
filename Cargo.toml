@@ -5,7 +5,7 @@ members = ["core", "src-tauri"]
 [workspace.package]
 version = "1.0.1"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.88"
 license = "MIT"
 repository = "https://github.com/vibecoder880/difflens"
 description = "Local-first, cross-platform document diffing with semantic alignment"
