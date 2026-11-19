@@ -30,7 +30,7 @@
 //! box bottom, so downstream move-delta math shares one convention.
 //! Every OCR block carries `anchor: Some("ocr")` as honest provenance.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
 
 use crate::error::{CoreError, CoreResult};
@@ -383,8 +383,10 @@ pub fn ocr_pdf(
             }
         };
         let tiff = super::rasterize::encode_tiff_rgb(&raster);
-        let image_path = match write_temp_tiff(&tiff) {
-            Some(p) => p,
+        // Held for the duration of the tesseract call; dropped (and thus
+        // deleted) immediately after, even on the error paths below.
+        let temp_image = match write_temp_tiff(&tiff) {
+            Some(f) => f,
             None => {
                 outcome.warnings.push(super::labels::page_failed(
                     *page_no,
@@ -393,8 +395,9 @@ pub fn ocr_pdf(
                 continue;
             }
         };
+        let image_path = temp_image.path().to_path_buf();
         let result = run_tesseract_image(&binary, &langs, &image_path, page_timeout);
-        let _ = std::fs::remove_file(&image_path);
+        drop(temp_image);
         let words = match result {
             Ok(w) => w,
             Err(e) => {
@@ -464,22 +467,17 @@ pub fn run_tesseract_image(
     Ok(parse_tsv(&tsv))
 }
 
-/// Write TIFF bytes to a fresh temp file; `None` when the temp dir is
-/// unwritable (callers warn and skip the page instead of failing).
-fn write_temp_tiff(bytes: &[u8]) -> Option<PathBuf> {
-    let dir = std::env::temp_dir().join("difflens-ocr");
-    std::fs::create_dir_all(&dir).ok()?;
-    let name = format!(
-        "page-{}-{}.tiff",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .ok()?
-            .as_nanos()
-    );
-    let path = dir.join(name);
-    std::fs::write(&path, bytes).ok()?;
-    Some(path)
+/// Write TIFF bytes to a fresh `NamedTempFile` in the system temp dir:
+/// randomized name (no cross-run predictability), owner-only mode 0600 on
+/// unix, and automatic removal on drop — document-derived page images no
+/// longer linger in a shared predictable directory until reboot (review
+/// P2-6). `None` when the temp dir is unwritable (callers warn and skip
+/// the page instead of failing).
+fn write_temp_tiff(bytes: &[u8]) -> Option<tempfile::NamedTempFile> {
+    use std::io::Write;
+    let mut file = tempfile::NamedTempFile::new().ok()?;
+    file.write_all(bytes).ok()?;
+    Some(file)
 }
 
 #[cfg(test)]
@@ -521,6 +519,30 @@ not-a-number\trow\n\
         assert!(parse_tsv("").is_empty());
         assert!(parse_tsv("\n\n\n").is_empty());
         assert!(parse_tsv("garbage\nrows\there").is_empty());
+    }
+
+    #[test]
+    fn temp_tiff_is_owner_only_and_cleaned_up_on_drop() {
+        // Review P2-6: document-derived page images must not linger in a
+        // shared temp dir after use.
+        let file = write_temp_tiff(b"tiff-bytes").expect("temp file created");
+        let path = file.path().to_path_buf();
+        assert!(path.is_file());
+        assert_eq!(std::fs::read(&path).unwrap(), b"tiff-bytes");
+        // Randomized name directly in the temp root (no shared
+        // predictable `difflens-ocr/` directory anymore).
+        assert_eq!(
+            path.parent().map(|p| p.to_path_buf()),
+            Some(std::env::temp_dir())
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o600, "temp image must be owner-only");
+        }
+        drop(file);
+        assert!(!path.exists(), "temp image must be deleted on drop");
     }
 
     #[test]

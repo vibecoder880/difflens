@@ -11,6 +11,20 @@
 //!   resume; a server that ignores the range (HTTP 200) restarts from
 //!   scratch; HTTP 416 (stale `.part`) restarts exactly once — a second
 //!   416 (on the plain GET) fails the job instead of looping.
+//! - **Redirect policy** (review P2-3): ureq 2.x follows up to 5
+//!   redirects, including cross-host hops (pinned explicitly in
+//!   [`build_llm_agent`]). This is accepted here because (a) every URL
+//!   comes from the compile-time-pinned manifest (`manifest.rs`), not
+//!   user input; (b) the payload is gated on SHA-256 **before** the
+//!   atomic `.part → dest` rename, so a redirecting mirror cannot ship
+//!   different bytes — it can only fail the download; and (c) downloads
+//!   carry no credentials (no `Authorization`/`Cookie` headers are ever
+//!   set on these requests, and ureq's default `AuthPolicy::Never`
+//!   strips them across redirects regardless). If credentials or
+//!   user-supplied URLs are ever introduced, this must be revisited:
+//!   restrict redirects to same-host (or `redirects(0)`) and/or pin the
+//!   mirror hosts. Re-verify per release: the ureq upgrade in
+//!   Cargo.lock is what owns this behavior.
 //! - Size caps enforced while streaming; SHA-256 verified against the
 //!   manifest digest before the atomic `.part → dest` rename.
 //! - Cancellation is cooperative: the progress closure returns `false`
@@ -46,10 +60,15 @@ pub const READ_TIMEOUT: Duration = Duration::from_secs(120);
 /// Shared ureq agent (connection pooling, timeouts). Also used by the
 /// loopback-only LLM client (the only other legitimate HTTP construction,
 /// per the egress audit allowlist).
+///
+/// Redirects are pinned to ureq's default of 5 hops (cross-host allowed);
+/// see the module docs for why that is safe in this crate and when it
+/// must be revisited.
 pub fn build_llm_agent() -> ureq::Agent {
     ureq::AgentBuilder::new()
         .timeout_connect(CONNECT_TIMEOUT)
         .timeout_read(READ_TIMEOUT)
+        .redirects(5)
         .build()
 }
 
@@ -315,6 +334,16 @@ impl DownloadManager {
         Self::default()
     }
 
+    /// Lock the job map, mapping poison to a `CoreError::Download`
+    /// instead of panicking (review P2-9: a poisoned map must surface as
+    /// an error at the Tauri command boundary, never crash the command
+    /// thread).
+    fn lock_jobs(&self) -> CoreResult<std::sync::MutexGuard<'_, HashMap<String, JobRecord>>> {
+        self.jobs
+            .lock()
+            .map_err(|e| CoreError::Download(format!("download job map poisoned: {e}")))
+    }
+
     /// Register a download whose thread the manager does not own (e.g. the
     /// Tauri install thread that also extracts the archive after the
     /// transfer) so `cancel` and `snapshot` see it. Returns the shared
@@ -323,12 +352,12 @@ impl DownloadManager {
     /// `CoreError::Cancelled`, and the owner reports the terminal state
     /// via [`Self::finish`]. Re-registering a still-running job joins the
     /// existing flag instead of resetting it.
-    pub fn register(&self, job_id: &str) -> Arc<std::sync::atomic::AtomicBool> {
-        let mut jobs = self.jobs.lock().expect("download job map poisoned");
+    pub fn register(&self, job_id: &str) -> CoreResult<Arc<std::sync::atomic::AtomicBool>> {
+        let mut jobs = self.lock_jobs()?;
         if let Some(rec) = jobs.get(job_id)
             && rec.state == JobState::Running
         {
-            return rec.cancel.clone();
+            return Ok(rec.cancel.clone());
         }
         let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let record = JobRecord {
@@ -340,17 +369,23 @@ impl DownloadManager {
             error: None,
         };
         jobs.insert(job_id.to_string(), record);
-        cancel
+        Ok(cancel)
     }
 
     /// Record the terminal state of an externally-run job (`Done`,
     /// `Failed`, or `Cancelled`) so `cancel` stops flagging it. No-op for
     /// unknown ids, already-terminal jobs, or a `Running` argument.
+    ///
+    /// Fire-and-forget (called from download threads): lock poisoning is
+    /// logged, never panicked on.
     pub fn finish(&self, job_id: &str, state: JobState, error: Option<String>) {
         if state == JobState::Running {
             return;
         }
-        let mut jobs = self.jobs.lock().expect("download job map poisoned");
+        let Ok(mut jobs) = self.jobs.lock() else {
+            tracing::warn!("download job map poisoned; cannot finish {job_id}");
+            return;
+        };
         if let Some(rec) = jobs.get_mut(job_id)
             && rec.state == JobState::Running
         {
@@ -365,7 +400,7 @@ impl DownloadManager {
         &self,
         spec: DownloadSpec,
         mut on_progress: impl FnMut(u64, Option<u64>) + Send + 'static,
-    ) -> String {
+    ) -> CoreResult<String> {
         let job_id = format!("dl-{}", self.next_id.fetch_add(1, Ordering::SeqCst) + 1);
         let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let bytes_done = Arc::new(AtomicU64::new(0));
@@ -377,10 +412,7 @@ impl DownloadManager {
             dest: Some(spec.dest.clone()),
             error: None,
         };
-        self.jobs
-            .lock()
-            .expect("download job map poisoned")
-            .insert(job_id.clone(), record);
+        self.lock_jobs()?.insert(job_id.clone(), record);
 
         let jobs = self.jobs.clone();
         let job_id_thread = job_id.clone();
@@ -391,22 +423,32 @@ impl DownloadManager {
                 let outcome = download_file(&spec, &mut |done, total| {
                     bytes_done.store(done, Ordering::SeqCst);
                     if let Some(t) = total {
-                        *jobs
-                            .lock()
-                            .expect("download job map poisoned")
-                            .get_mut(&job_id_thread)
-                            .expect("job record present")
-                            .bytes_total
-                            .lock()
-                            .expect("bytes_total poisoned") = Some(t);
+                        // Best-effort diagnostics: a poisoned map (or a
+                        // vanished record) skips the total update instead
+                        // of panicking inside the download thread.
+                        if let Ok(mut j) = jobs.lock()
+                            && let Some(rec) = j.get_mut(&job_id_thread)
+                            && let Ok(mut total_slot) = rec.bytes_total.lock()
+                        {
+                            *total_slot = Some(t);
+                        }
                     }
                     on_progress(done, total);
                     !flag.load(Ordering::SeqCst)
                 });
-                let mut jobs = jobs.lock().expect("download job map poisoned");
-                let rec = jobs
-                    .get_mut(&job_id_thread)
-                    .expect("job record present in thread");
+                // Record the outcome; if the map was poisoned meanwhile
+                // the job's terminal state is simply lost (the command
+                // boundary reports the poison error) — log, don't panic.
+                let Ok(mut jobs) = jobs.lock() else {
+                    tracing::warn!(
+                        "download job map poisoned; terminal state of {job_id_thread} lost"
+                    );
+                    return;
+                };
+                let Some(rec) = jobs.get_mut(&job_id_thread) else {
+                    tracing::warn!("download record vanished for {job_id_thread}");
+                    return;
+                };
                 match outcome {
                     Ok(dest) => {
                         rec.state = JobState::Done;
@@ -419,33 +461,35 @@ impl DownloadManager {
                     }
                 }
             })
-            .expect("spawn download thread");
-        job_id
+            .map_err(|e| CoreError::Download(format!("spawn download thread: {e}")))?;
+        Ok(job_id)
     }
 
     /// Flag a running job as cancelled. `true` when a running job matched.
-    pub fn cancel(&self, job_id: &str) -> bool {
-        let jobs = self.jobs.lock().expect("download job map poisoned");
+    pub fn cancel(&self, job_id: &str) -> CoreResult<bool> {
+        let jobs = self.lock_jobs()?;
         match jobs.get(job_id) {
             Some(rec) if rec.state == JobState::Running => {
                 rec.cancel.store(true, Ordering::SeqCst);
-                true
+                Ok(true)
             }
-            _ => false,
+            _ => Ok(false),
         }
     }
 
-    /// Snapshot a job (unknown id → None).
-    pub fn snapshot(&self, job_id: &str) -> Option<JobSnapshot> {
-        let jobs = self.jobs.lock().expect("download job map poisoned");
-        jobs.get(job_id).map(|rec| JobSnapshot {
+    /// Snapshot a job (unknown id → `None`).
+    pub fn snapshot(&self, job_id: &str) -> CoreResult<Option<JobSnapshot>> {
+        let jobs = self.lock_jobs()?;
+        Ok(jobs.get(job_id).map(|rec| JobSnapshot {
             job_id: job_id.to_string(),
             state: rec.state,
             bytes_done: rec.bytes_done.load(Ordering::SeqCst),
-            bytes_total: *rec.bytes_total.lock().expect("bytes_total poisoned"),
+            // Poisoned diagnostics slot degrades to its last value
+            // instead of panicking (P2-9).
+            bytes_total: *rec.bytes_total.lock().unwrap_or_else(|e| e.into_inner()),
             dest: rec.dest.clone(),
             error: rec.error.clone(),
-        })
+        }))
     }
 }
 
@@ -599,15 +643,15 @@ mod tests {
         let dest = dir.path().join("m.bin");
         let spec = spec_for(format!("http://{}/f", server.addr), dest.clone(), sha, 7);
         let mgr = DownloadManager::new();
-        let job = mgr.start(spec, |_, _| {});
+        let job = mgr.start(spec, |_, _| {}).unwrap();
         // Poll until terminal state (bounded — loopback is fast).
         for _ in 0..200 {
-            let snap = mgr.snapshot(&job).unwrap();
+            let snap = mgr.snapshot(&job).unwrap().unwrap();
             if snap.state != JobState::Running {
                 assert_eq!(snap.state, JobState::Done);
                 assert_eq!(snap.bytes_done, 7);
                 assert_eq!(snap.dest.unwrap(), dest);
-                assert!(!mgr.cancel(&job));
+                assert!(!mgr.cancel(&job).unwrap());
                 return;
             }
             std::thread::sleep(Duration::from_millis(10));
@@ -628,12 +672,12 @@ mod tests {
             1 << 20,
         );
         let mgr = DownloadManager::new();
-        let job = mgr.start(spec, |_, _| {});
+        let job = mgr.start(spec, |_, _| {}).unwrap();
         // Cancel as soon as possible; either it was still running (true)
         // or already done (false) — both acceptable, flag must not panic.
         let _ = mgr.cancel(&job);
         for _ in 0..200 {
-            if mgr.snapshot(&job).unwrap().state != JobState::Running {
+            if mgr.snapshot(&job).unwrap().unwrap().state != JobState::Running {
                 break;
             }
             std::thread::sleep(Duration::from_millis(10));
@@ -645,33 +689,39 @@ mod tests {
         // Simulates the Tauri side: a download whose thread the manager
         // does not own; cancel flags it, finish records the outcome.
         let mgr = DownloadManager::new();
-        let flag = mgr.register("model-test");
-        assert_eq!(mgr.snapshot("model-test").unwrap().state, JobState::Running);
+        let flag = mgr.register("model-test").unwrap();
+        assert_eq!(
+            mgr.snapshot("model-test").unwrap().unwrap().state,
+            JobState::Running
+        );
         // Re-registering while running joins the same flag.
-        assert!(Arc::ptr_eq(&flag, &mgr.register("model-test")));
-        assert!(mgr.cancel("model-test"));
+        assert!(Arc::ptr_eq(&flag, &mgr.register("model-test").unwrap()));
+        assert!(mgr.cancel("model-test").unwrap());
         assert!(flag.load(Ordering::SeqCst));
 
         mgr.finish("model-test", JobState::Failed, Some("boom".into()));
-        let snap = mgr.snapshot("model-test").unwrap();
+        let snap = mgr.snapshot("model-test").unwrap().unwrap();
         assert_eq!(snap.state, JobState::Failed);
         assert_eq!(snap.error.as_deref(), Some("boom"));
 
         // Terminal is sticky; cancel on a finished job is a no-op.
         mgr.finish("model-test", JobState::Done, None);
-        assert_eq!(mgr.snapshot("model-test").unwrap().state, JobState::Failed);
-        assert!(!mgr.cancel("model-test"));
+        assert_eq!(
+            mgr.snapshot("model-test").unwrap().unwrap().state,
+            JobState::Failed
+        );
+        assert!(!mgr.cancel("model-test").unwrap());
 
         // Unknown ids and a `Running` "finish" are no-ops.
         mgr.finish("missing", JobState::Done, None);
-        assert!(mgr.snapshot("missing").is_none());
-        let flag2 = mgr.register("model-other");
+        assert!(mgr.snapshot("missing").unwrap().is_none());
+        let flag2 = mgr.register("model-other").unwrap();
         mgr.finish("model-other", JobState::Running, None);
         assert_eq!(
-            mgr.snapshot("model-other").unwrap().state,
+            mgr.snapshot("model-other").unwrap().unwrap().state,
             JobState::Running
         );
-        assert!(mgr.cancel("model-other"));
+        assert!(mgr.cancel("model-other").unwrap());
         assert!(flag2.load(Ordering::SeqCst));
     }
 
@@ -692,7 +742,7 @@ mod tests {
         );
         let mgr = Arc::new(DownloadManager::new());
         let job_id = "model-cancelable".to_string();
-        let flag = mgr.register(&job_id);
+        let flag = mgr.register(&job_id).unwrap();
         // Deterministic ordering: the canceller fires only after the
         // transfer reached its first progress call (`entered`), and the
         // progress closure only returns after the flag is set (`spin`) —
@@ -705,7 +755,7 @@ mod tests {
             while !entered2.load(Ordering::SeqCst) {
                 std::thread::sleep(Duration::from_millis(1));
             }
-            assert!(mgr2.cancel(&job_id_cancel));
+            assert!(mgr2.cancel(&job_id_cancel).unwrap());
         });
         let outcome = download_file(&spec, &mut |_, _| {
             entered.store(true, Ordering::SeqCst);
@@ -718,7 +768,10 @@ mod tests {
         assert!(matches!(outcome, Err(CoreError::Cancelled)));
 
         mgr.finish(&job_id, JobState::Cancelled, None);
-        assert_eq!(mgr.snapshot(&job_id).unwrap().state, JobState::Cancelled);
+        assert_eq!(
+            mgr.snapshot(&job_id).unwrap().unwrap().state,
+            JobState::Cancelled
+        );
     }
 
     #[test]

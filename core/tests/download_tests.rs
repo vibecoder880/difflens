@@ -62,7 +62,7 @@ impl LoopbackServer {
 
 fn wait_terminal(mgr: &DownloadManager, job: &str) -> difflens_core::download::JobSnapshot {
     for _ in 0..300 {
-        let snap = mgr.snapshot(job).unwrap();
+        let snap = mgr.snapshot(job).unwrap().unwrap();
         if snap.state != difflens_core::download::JobState::Running {
             return snap;
         }
@@ -120,9 +120,11 @@ fn manager_full_flow_with_checksum_and_progress() {
     let mgr = DownloadManager::new();
     let max_seen = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
     let max_seen_t = max_seen.clone();
-    let job = mgr.start(spec, move |done, _| {
-        max_seen_t.fetch_max(done, std::sync::atomic::Ordering::SeqCst);
-    });
+    let job = mgr
+        .start(spec, move |done, _| {
+            max_seen_t.fetch_max(done, std::sync::atomic::Ordering::SeqCst);
+        })
+        .unwrap();
     let snap = wait_terminal(&mgr, &job);
     assert_eq!(snap.state, difflens_core::download::JobState::Done);
     assert_eq!(snap.bytes_done, body.len() as u64);
@@ -134,7 +136,7 @@ fn manager_full_flow_with_checksum_and_progress() {
     );
     assert!(!dest.with_file_name("artifact.bin.part").exists());
     // Cancelling a finished job is a no-op.
-    assert!(!mgr.cancel(&job));
+    assert!(!mgr.cancel(&job).unwrap());
 }
 
 #[test]
@@ -153,13 +155,13 @@ fn manager_resume_across_restart_keeps_part() {
     );
     spec.expected_bytes = Some(body.len() as u64);
     let mgr = DownloadManager::new();
-    let job = mgr.start(spec.clone(), |_, _| {});
+    let job = mgr.start(spec.clone(), |_, _| {}).unwrap();
     let _ = mgr.cancel(&job);
     let snap = wait_terminal(&mgr, &job);
     assert_eq!(snap.state, difflens_core::download::JobState::Cancelled);
 
     // Second attempt resumes (or restarts) and completes.
-    let job2 = mgr.start(spec, |_, _| {});
+    let job2 = mgr.start(spec, |_, _| {}).unwrap();
     let snap2 = wait_terminal(&mgr, &job2);
     assert_eq!(snap2.state, difflens_core::download::JobState::Done);
     assert_eq!(std::fs::read(&dest).unwrap(), body);
@@ -177,7 +179,7 @@ fn manager_checksum_failure_marks_job_failed() {
     );
     spec.expected_bytes = Some(7);
     let mgr = DownloadManager::new();
-    let job = mgr.start(spec, |_, _| {});
+    let job = mgr.start(spec, |_, _| {}).unwrap();
     let snap = wait_terminal(&mgr, &job);
     assert_eq!(snap.state, difflens_core::download::JobState::Failed);
     assert!(snap.error.unwrap_or_default().contains("checksum mismatch"));
