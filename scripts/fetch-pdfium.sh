@@ -6,17 +6,38 @@
 # marker matches, this is a no-op. Re-run any time to force a refresh:
 #   rm -rf resources/binaries/pdfium && scripts/fetch-pdfium.sh
 #
-# Extracts into resources/binaries/pdfium/ (gitignored), giving e.g.
+# Modes:
+#   scripts/fetch-pdfium.sh                     # developer staging (host platform)
+#   scripts/fetch-pdfium.sh --bundle <platform> # release packaging: flat file
+#                                               # into src-tauri/resources/pdfium/
+#                                               # platform: linux-x64|mac-arm64|win-x64
+#
+# Developer staging extracts into resources/binaries/pdfium/ (gitignored), giving e.g.
 #   resources/binaries/pdfium/lib/libpdfium.so        (Linux)
 #   resources/binaries/pdfium/lib/libpdfium.dylib     (macOS)
 #   resources/binaries/pdfium/bin/pdfium.dll          (Windows)
 #
+# --bundle mode writes just the library file (flat) to
+#   src-tauri/resources/pdfium/pdfium.dll | libpdfium.dylib | libpdfium.so
+# which tauri.conf.json bundles into the packaged app resources.
+#
 # Tests locate the library via DIFFLENS_PDFIUM_PATH (full file path); when
-# unset they fall back to the path above relative to the repo root.
+# unset they fall back to the staged path above relative to the repo root.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEST="$REPO_ROOT/resources/binaries/pdfium"
+
+BUNDLE_PLATFORM=""
+if [ "${1:-}" = "--bundle" ]; then
+  case "${2:-}" in
+    linux-x64 | mac-arm64 | win-x64) BUNDLE_PLATFORM="$2" ;;
+    *)
+      echo "usage: $0 [--bundle linux-x64|mac-arm64|win-x64]" >&2
+      exit 2
+      ;;
+  esac
+fi
 
 # Pinned release (chromium build 8165, published 2026-11-16).
 # URL-encode the "/" in the tag as %2F.
@@ -37,6 +58,16 @@ checksum_for() {
 }
 
 platform_asset() {
+  # --bundle pins the platform from its argument (release matrix),
+  # otherwise auto-detect the host platform.
+  if [ -n "$BUNDLE_PLATFORM" ]; then
+    case "$BUNDLE_PLATFORM" in
+      linux-x64) echo "pdfium-linux-x64.tgz" ;;
+      mac-arm64) echo "pdfium-mac-arm64.tgz" ;;
+      win-x64) echo "pdfium-win-x64.tgz" ;;
+    esac
+    return
+  fi
   local os arch
   os="$(uname -s)"
   arch="$(uname -m)"
@@ -78,14 +109,28 @@ if [ -z "$expected" ]; then
 fi
 
 marker="$DEST/.checksum"
-library_rel=""
+# Flat bundled-library name + relative path inside the staged archive.
+if [ -n "$BUNDLE_PLATFORM" ]; then
+  case "$ASSET" in
+    pdfium-win-*) BUNDLED_NAME="pdfium.dll" ;;
+    pdfium-mac-*) BUNDLED_NAME="libpdfium.dylib" ;;
+    *) BUNDLED_NAME="libpdfium.so" ;;
+  esac
+fi
 case "$ASSET" in
   pdfium-win-*) library_rel="bin/pdfium.dll" ;;
+  pdfium-mac-*) library_rel="lib/libpdfium.dylib" ;;
   *) library_rel="lib/libpdfium.so" ;;
 esac
 
 # Idempotency: already fetched this exact archive?
-if [ -f "$DEST/$library_rel" ] && [ -f "$marker" ] && [ "$(cat "$marker")" = "$ASSET:$expected" ]; then
+if [ -n "$BUNDLE_PLATFORM" ]; then
+  BUNDLE_OUT="$REPO_ROOT/src-tauri/resources/pdfium/$BUNDLED_NAME"
+  if [ -f "$BUNDLE_OUT" ] && [ -f "$marker" ] && [ "$(cat "$marker")" = "bundle:$ASSET:$expected" ]; then
+    echo "fetch-pdfium: already bundled ($ASSET at $BUNDLE_OUT) — nothing to do"
+    exit 0
+  fi
+elif [ -f "$DEST/$library_rel" ] && [ -f "$marker" ] && [ "$(cat "$marker")" = "$ASSET:$expected" ]; then
   echo "fetch-pdfium: already staged ($ASSET at $DEST) — nothing to do"
   exit 0
 fi
@@ -108,5 +153,13 @@ echo "fetch-pdfium: checksum ok ($actual)"
 rm -rf "$DEST"
 mkdir -p "$DEST"
 tar xzf "$TMPDIR_DL/$ASSET" -C "$DEST" --no-same-owner
-echo "$ASSET:$expected" > "$marker"
-echo "fetch-pdfium: staged $DEST/$library_rel"
+
+if [ -n "$BUNDLE_PLATFORM" ]; then
+  mkdir -p "$REPO_ROOT/src-tauri/resources/pdfium"
+  cp "$DEST/$library_rel" "$BUNDLE_OUT"
+  echo "bundle:$ASSET:$expected" > "$marker"
+  echo "fetch-pdfium: bundled $(ls -la "$BUNDLE_OUT")"
+else
+  echo "$ASSET:$expected" > "$marker"
+  echo "fetch-pdfium: staged $DEST/$library_rel"
+fi

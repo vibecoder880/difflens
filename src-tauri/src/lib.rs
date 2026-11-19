@@ -18,6 +18,20 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(state::AppState::default())
         .setup(|app| {
+            // Point the core's PDFium loader at the bundled app resources.
+            // Packaged builds ship `resources/pdfium/<lib>` (see
+            // tauri.conf.json `bundle.resources`); dev builds fall through
+            // to the staged repo copy. Edition-2024 set_var is unsafe and
+            // safe here: single-threaded setup, before any reader spawns.
+            if let Ok(resource_dir) = app.path().resource_dir() {
+                // SAFETY: single-threaded setup window; all readers spawn later.
+                unsafe {
+                    std::env::set_var(
+                        difflens_core::extract::pdfium_loader::DIFFLENS_RESOURCE_DIR_ENV,
+                        &resource_dir,
+                    );
+                }
+            }
             // Phase-08: open the session history store eagerly so every
             // finished diff persists. A failure disables history without
             // blocking the app (commands re-open lazily as a fallback).

@@ -75,7 +75,19 @@ jobs:
         shell: bash
         run: scripts/fetch-models.sh --bundle
 
+      - name: Bundle PDFium for this platform
+        shell: bash
+        run: |
+          case "${{ matrix.os }}" in
+            windows-latest) PLATFORM=win-x64 ;;
+            macos-latest)   PLATFORM=mac-arm64 ;;
+            *)              PLATFORM=linux-x64 ;;
+          esac
+          bash scripts/fetch-pdfium.sh --bundle "$PLATFORM"
+          ls -la src-tauri/resources/pdfium/
+
       - name: Build and upload release
+        id: tauriBuild
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # tag: v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -88,3 +100,16 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
+
+      - name: Verify PDFium shipped inside the bundles
+        shell: bash
+        run: |
+          set -e
+          echo "PDFium files inside built bundles:"
+          FOUND=$(find src-tauri/target/release/bundle -type f \( -name "pdfium.dll" -o -name "libpdfium.so" -o -name "libpdfium.dylib" \) 2>/dev/null | head -5)
+          echo "$FOUND"
+          if [ -z "$FOUND" ]; then
+            echo "::error::PDFium library missing from built bundle — packaging regression (v1.0.0/1.0.1 shipped without it)"
+            exit 1
+          fi
+          echo "pdfium-bundled-ok"
