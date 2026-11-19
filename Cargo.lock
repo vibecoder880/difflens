@@ -917,7 +917,7 @@ dependencies = [
 
 [[package]]
 name = "difflens"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "difflens-core",
  "serde",
@@ -932,7 +932,7 @@ dependencies = [
 
 [[package]]
 name = "difflens-core"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "calamine",
  "flate2",
