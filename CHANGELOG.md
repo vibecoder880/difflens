@@ -4,6 +4,37 @@ All notable changes to DiffLens are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.0.2] — 2026-11-19
+
+Packaging fix release — found by hands-on testing with real documents.
+
+### Fixed
+
+- **PDFium now ships inside the app** (v1.0.0/v1.0.1 shipped without it, so
+  PDF comparison failed on installed apps with "PDFium library not found").
+  Each platform bundle carries its native PDFium library; the release
+  pipeline verifies it landed inside the built bundle.
+- **Real semantic alignment is now active in shipped apps** — the
+  `embeddings-ort` feature was never enabled for the packaged shell, so
+  releases silently used a deterministic fallback matcher and the bundled
+  model was unused. The `multilingual-e5-small` ONNX model (~118 MB) now
+  ships inside the bundle, and the release pipeline verifies it. The
+  fallback remains as a safety net, never as the intended path.
+- Vietnamese decimal parsing: `0,075%` was misread as `75.0%` (zero-head
+  integer rule), making percent deltas wrong by three orders of magnitude
+  on realistic contract values.
+- macOS developer staging used the wrong library name in one fallback
+  path (`.so` instead of `.dylib`).
+
+### Added
+
+- Hands-on QA suite as repeatable integration tests
+  (`core/tests/qa_pipeline.rs`, `qa_loader_chain.rs`): the full pipeline
+  over generated Vietnamese contract pairs in DOCX/PDF/XLSX/PPTX/Markdown,
+  the bundled-resource resolution chain, and report/store roundtrips.
+- Release builds now assert both the PDFium library and the e5-small model
+  are present inside every built bundle before upload.
+
 ## [1.0.1] — 2026-11-19
 
 Security hardening release. All 10 secondary findings from the v1.0.0 code
