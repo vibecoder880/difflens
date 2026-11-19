@@ -3,7 +3,9 @@ name = "difflens-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "DiffLens core: extraction, diff, alignment, heuristics, LLM sidecar, OCR"
+description.workspace = true
+repository.workspace = true
+rust-version.workspace = true
 
 [dependencies]
 serde.workspace = true

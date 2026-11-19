@@ -10,7 +10,9 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./src"),
+      // `import.meta.dirname` (Node ≥ 20.11) — the future-default native
+      // config loader does not support `__dirname`.
+      "@": path.resolve(import.meta.dirname, "./src"),
     },
   },
   // Tailored for Tauri development
@@ -40,5 +42,21 @@ export default defineConfig({
       process.env.TAURI_ENV_PLATFORM === "windows" ? "chrome105" : "safari16",
     minify: !process.env.TAURI_ENV_DEBUG ? "esbuild" : false,
     sourcemap: !!process.env.TAURI_ENV_DEBUG,
+    // Split stable vendor code into its own cacheable chunk so app-code
+    // changes do not push the whole graph over the chunk-size warning.
+    rolldownOptions: {
+      output: {
+        advancedChunks: {
+          groups: [
+            { name: "react-vendor", test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/ },
+            {
+              name: "tanstack-vendor",
+              test: /node_modules[\\/]@tanstack[\\/]/,
+            },
+            { name: "i18n-vendor", test: /node_modules[\\/](i18next|react-i18next)[\\/]/ },
+          ],
+        },
+      },
+    },
   },
 });

@@ -28,7 +28,7 @@ jobs:
 
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # tag: v4.4.0
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # tag: v5.0.0 (node24-native)
 
       - name: Free disk space (Linux)
         if: matrix.os == 'ubuntu-24.04'
@@ -53,7 +53,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev pkg-config
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # tag: v4.4.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # tag: v5.0.0 (node24-native)
         with:
           node-version: 24
           cache: npm

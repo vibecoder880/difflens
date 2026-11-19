@@ -3,7 +3,9 @@ name = "difflens"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "DiffLens desktop app (Tauri shell)"
+description.workspace = true
+repository.workspace = true
+rust-version.workspace = true
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
