@@ -114,9 +114,19 @@ jobs:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # tag: v5.0.0 (node24-native)
 
       - name: Install Tauri Linux deps
+        # Runner apt mirrors intermittently return 503 for whole pools —
+        # retry at file level (Acquire::Retries) and step level (loop).
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev pkg-config
+          APT_INSTALL="sudo apt-get install -y -o Acquire::Retries=5 libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev pkg-config"
+          for attempt in 1 2 3; do
+            sudo apt-get update
+            if $APT_INSTALL; then
+              exit 0
+            fi
+            echo "apt attempt $attempt failed (mirror outage?) — retrying in 30s"
+            sleep 30
+          done
+          exit 1
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # tag: stable branch head
