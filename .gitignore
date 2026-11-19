@@ -15,6 +15,8 @@ Cargo.lock.bak
 src-tauri/gen/
 # Release-bundled native libs (fetched by scripts/fetch-pdfium.sh --bundle)
 src-tauri/resources/pdfium/
+# Release-bundled e5 model (fetched by scripts/fetch-models.sh --bundle)
+src-tauri/resources/models/
 
 # Models & downloaded binaries (user-downloaded, never committed)
 resources/models/

@@ -3,8 +3,8 @@
 # difflens-core's real embedder (OrtE5Embedder, feature `embeddings-ort`).
 #
 # Modes:
-#   scripts/fetch-models.sh --test     # test/CI layout (same files as bundle)
-#   scripts/fetch-models.sh --bundle   # release bundling (identical to --test)
+#   scripts/fetch-models.sh --test     # repo-root resources/models (CI/local tests)
+#   scripts/fetch-models.sh --bundle   # packaged-app resources (src-tauri/resources/models)
 #
 # Idempotent: if the files are already present and match the recorded
 # checksums, this is a no-op. Delete the directory to force a re-download:
@@ -24,11 +24,13 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DEST="$REPO_ROOT/resources/models/e5-small"
 
+# --test: repo-root layout for CI/local tests; --bundle: packaged-app
+# resources (src-tauri/resources/models) shipped via tauri.conf.json.
 MODE="${1:---test}"
 case "$MODE" in
-  --test|--bundle) ;;   # both modes fetch the identical file set
+  --test) DEST="$REPO_ROOT/resources/models/e5-small" ;;
+  --bundle) DEST="$REPO_ROOT/src-tauri/resources/models/e5-small" ;;
   *)
     echo "usage: $0 [--test|--bundle]" >&2
     exit 2

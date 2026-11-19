@@ -18,10 +18,12 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(state::AppState::default())
         .setup(|app| {
-            // Point the core's PDFium loader at the bundled app resources.
-            // Packaged builds ship `resources/pdfium/<lib>` (see
+            // Point the core's PDFium loader and the e5 embedder at the
+            // bundled app resources. Packaged builds ship
+            // `resources/pdfium/<lib>` and
+            // `resources/models/e5-small/{onnx,tokenizer}` (see
             // tauri.conf.json `bundle.resources`); dev builds fall through
-            // to the staged repo copy. Edition-2024 set_var is unsafe and
+            // to the staged repo copies. Edition-2024 set_var is unsafe and
             // safe here: single-threaded setup, before any reader spawns.
             if let Ok(resource_dir) = app.path().resource_dir() {
                 // SAFETY: single-threaded setup window; all readers spawn later.
@@ -29,6 +31,10 @@ pub fn run() {
                     std::env::set_var(
                         difflens_core::extract::pdfium_loader::DIFFLENS_RESOURCE_DIR_ENV,
                         &resource_dir,
+                    );
+                    std::env::set_var(
+                        "DIFFLENS_E5_DIR",
+                        resource_dir.join("models").join("e5-small"),
                     );
                 }
             }

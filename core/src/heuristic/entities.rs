@@ -20,7 +20,8 @@
 //!    separators (`1.500.000` → 1500000, groups must be 3 digits wide).
 //! 3. **Exactly one occurrence, followed by exactly 3 digits**: group
 //!    separator — the conservative integer reading for money-style
-//!    formatting (`990.000đ` → 990000, `1,500` → 1500).
+//!    formatting (`990.000đ` → 990000, `1,500` → 1500) — unless the head is
+//!    only zeros, which cannot be a thousands group (`0,075` → 0.075).
 //! 4. **Exactly one occurrence, followed by 1–2 digits (or other widths)**:
 //!    decimal separator (`1,5` → 1.5, `0.5` → 0.5).
 //! 5. **Any other shape** (empty groups, non-3-wide groups, trailing
@@ -267,12 +268,21 @@ pub fn parse_number(token: &str) -> Option<f64> {
                 let pos = token.find(sep)?;
                 let after = &token[pos + 1..];
                 if after.len() == 3 && after.bytes().all(|b| b.is_ascii_digit()) {
-                    // Rule 3: conservative integer reading (`990.000` → 990000).
+                    // Rule 3: conservative integer reading (`990.000` → 990000) —
+                    // except when the head is only zeros: a grouped integer never
+                    // starts with a zero-only group, so `0,075` / `0.075` are the
+                    // decimal 0.075 (Vietnamese small percentages like `0,075%`
+                    // used to be misread as 75 and inflate deltas ~×3000).
                     let head = &token[..pos];
                     if head.is_empty() || !head.bytes().all(|b| b.is_ascii_digit()) {
                         return None;
                     }
-                    int_digits = format!("{head}{after}");
+                    if head.bytes().all(|b| b == b'0') {
+                        int_digits = head.to_string();
+                        frac = Some(after.to_string());
+                    } else {
+                        int_digits = format!("{head}{after}");
+                    }
                 } else {
                     // Rule 4: decimal separator.
                     let head = &token[..pos];
@@ -975,6 +985,38 @@ mod tests {
         assert!((get("half percent") - 50.0).abs() < 1e-9);
         // `1990%` style still parses as a percent (numeric + `%`).
         assert!((get("tăng 1990%") - 1990.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn zero_head_three_digit_tail_is_decimal_not_thousands() {
+        // Regression (QA hands-on v1.0.2): a zero-only head cannot be a
+        // thousands group, so `0,075` / `0.075` are the decimal 0.075.
+        // They used to parse as 75 via the rule-3 integer reading.
+        assert!((parse_number("0,075").unwrap() - 0.075).abs() < 1e-12);
+        assert!((parse_number("0.075").unwrap() - 0.075).abs() < 1e-12);
+        assert!((parse_number("0,500").unwrap() - 0.5).abs() < 1e-12);
+        // Non-zero heads keep the conservative integer reading.
+        assert!((parse_number("990.000").unwrap() - 990_000.0).abs() < 1e-9);
+        assert!((parse_number("1,500").unwrap() - 1500.0).abs() < 1e-9);
+        assert!((parse_number("1.500.000").unwrap() - 1_500_000.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn vietnamese_small_percent_contract_value() {
+        // `phạt 0,05%/ngày → 0,075%/ngày` must yield a relative delta of
+        // +0.5 (+50%), not +1499 (the old 75.0 misparse).
+        let (flags, _) = crate::heuristic::enrich_texts(
+            "Mỗi chậm thanh toán bị phạt 0,05%/ngày.",
+            "Mỗi chậm thanh toán bị phạt 0,075%/ngày.",
+        );
+        let pct = flags
+            .iter()
+            .find(|f| f.rule_id == crate::heuristic::deltas::RULE_PERCENT_CHANGED)
+            .expect("PERCENT_CHANGED fired");
+        assert!((pct.delta.unwrap() - 0.5).abs() < 1e-9, "delta {:?}", pct.delta);
+        let detail = pct.detail.as_deref().unwrap();
+        assert!(detail.starts_with("0.05%→"), "detail {detail:?}");
+        assert!(detail.contains("pp"), "detail {detail:?}");
     }
 
     // ---- references ----

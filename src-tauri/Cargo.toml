@@ -17,7 +17,11 @@ serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
-difflens-core = { path = "../core" }
+# Real semantic alignment ships in the packaged app: the e5-small ONNX
+# model + tokenizer are bundled via tauri.conf.json resources and
+# pipeline::default_embedder falls back to the deterministic fake only if
+# the model fails to load at runtime.
+difflens-core = { path = "../core", features = ["embeddings-ort"] }
 
 [dev-dependencies]
 # Headless command-layer tests (execute_job persistence, report writing).

@@ -112,4 +112,11 @@ jobs:
             echo "::error::PDFium library missing from built bundle — packaging regression (v1.0.0/1.0.1 shipped without it)"
             exit 1
           fi
-          echo "pdfium-bundled-ok"
+          MODEL=$(find src-tauri/target/release/bundle -path "*e5-small*" -name "model_quantized.onnx" 2>/dev/null | head -2)
+          echo "e5-small model inside built bundles:"
+          echo "$MODEL"
+          if [ -z "$MODEL" ]; then
+            echo "::error::e5-small model missing from built bundle — semantic alignment would silently fall back to the fake embedder"
+            exit 1
+          fi
+          echo "pdfium-bundled-ok; e5-model-bundled-ok"
