@@ -1,0 +1,30 @@
+[book]
+title = "DiffLens Documentation"
+description = "Local-first, cross-platform document diffing with semantic alignment."
+authors = ["vibecoder880"]
+src = "src"
+language = "en"
+
+[output.html]
+default-theme = "system"
+git-repository-url = "https://github.com/vibecoder880/difflens"
+edit-url-template = "https://github.com/vibecoder880/difflens/edit/main/docs/src/{path}"
+site-url = "/difflens/"
+# mdBook emits .nojekyll into the build dir so GitHub Pages serves dotfiles fine.
+
+[output.html.search]
+enable = true            # default; explicit for clarity
+limit-results = 30
+teaser-word-count = 30
+use-boolean-and = true
+boost-title = 2
+boost-hierarchy = 2
+expand = true
+heading-split-level = 3
+
+[output.html.fold]
+enable = true
+level = 1
+
+[rust]
+edition = "2021"

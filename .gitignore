@@ -3,6 +3,9 @@ node_modules/
 dist/
 *.tsbuildinfo
 
+# mdBook build output
+docs/book/
+
 # Rust
 target/
 **/target/

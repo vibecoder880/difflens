@@ -1,0 +1,15 @@
+# Summary
+
+- [Introduction](intro.md)
+- [Installation](installation.md)
+- [Quickstart: your first diff](quickstart.md)
+- [User Guide](user-guide.md)
+- [How Diffing Works](how-it-works.md)
+- [AI Explanations Setup](ai-setup.md)
+- [OCR (Experimental)](ocr.md)
+- [Privacy and Security](privacy-security.md)
+- [Architecture](architecture.md)
+- [Building from Source](building.md)
+- [Contributing](contributing.md)
+- [FAQ](faq.md)
+- [Changelog](changelog.md)
