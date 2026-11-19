@@ -53,13 +53,18 @@ pub fn run_diff(
     validate_input_file(&new_path)?;
     let diff = state.diff.clone();
     let job_id = diff.next_job_id();
-    let cancel = diff.insert_running(&job_id);
+    let cancel = diff.insert_running(&job_id)?;
 
     let job_id_task = job_id.clone();
     let app_task = app.clone();
     let diff_task = state.diff.clone();
     let store_task = state.store.clone();
-    tauri::async_runtime::spawn(async move {
+    // The pipeline body is fully synchronous and CPU-heavy (extraction,
+    // alignment, diff); run it on the blocking pool (review P2-8) so it
+    // never occupies an async-runtime worker. Progress emission from the
+    // blocking thread is fine: `AppHandle` is Send + Sync and `emit` is
+    // thread-safe.
+    tauri::async_runtime::spawn_blocking(move || {
         execute_job(
             &job_id_task,
             &old_path,
@@ -81,7 +86,7 @@ pub fn run_diff(
         );
     });
 
-    diff.snapshot(&job_id)
+    diff.snapshot(&job_id)?
         .ok_or_else(|| "job record vanished".to_string())
 }
 
@@ -109,7 +114,7 @@ pub fn get_diff(
     app: AppHandle,
     state: State<AppState>,
 ) -> Result<Option<JobSnapshot>, String> {
-    if let Some(snapshot) = state.diff.snapshot(&job_id) {
+    if let Some(snapshot) = state.diff.snapshot(&job_id)? {
         return Ok(Some(snapshot));
     }
     if let Some(store_id) = job_id.strip_prefix("session-") {
@@ -266,7 +271,7 @@ pub fn export_report(
     state: State<AppState>,
 ) -> Result<u64, String> {
     // Resolve (result, created_at): live job first, then stored session.
-    let (result, created_at) = if let Some(snapshot) = state.diff.snapshot(&id) {
+    let (result, created_at) = if let Some(snapshot) = state.diff.snapshot(&id)? {
         let result = snapshot
             .result
             .ok_or_else(|| format!("diff job {id} has no result yet"))?;
@@ -381,7 +386,7 @@ fn write_report(
 /// the pipeline checks the flag at stage boundaries.
 #[tauri::command]
 pub fn cancel_diff(job_id: String, state: State<AppState>) -> Result<bool, String> {
-    Ok(state.diff.request_cancel(&job_id))
+    state.diff.request_cancel(&job_id)
 }
 
 /// Status snapshot for `ocr_status` (phase 06 settings UI guidance).
@@ -463,7 +468,12 @@ fn execute_job(
         }
     }
     // Terminal progress event so listeners see the final state transition.
-    let snapshot = diff.snapshot(job_id);
+    // Poison (map unreadable) skips the terminal emit instead of panicking
+    // inside the job thread (P2-9).
+    let snapshot = diff.snapshot(job_id).unwrap_or_else(|e| {
+        tracing::warn!("job map lock poisoned; terminal emit for {job_id} skipped: {e}");
+        None
+    });
     if let Some(snap) = snapshot {
         emit(
             match snap.state {
@@ -687,7 +697,7 @@ pub fn llm_install_server(app: AppHandle) -> Result<String, String> {
     // closure returns `false` when the flag is set, aborting the transfer
     // cooperatively (core keeps the `.part` for a later resume).
     let downloads = app.state::<AppState>().llm.downloads.clone();
-    let cancel = downloads.register(&job_id);
+    let cancel = downloads.register(&job_id).map_err(|e| e.to_string())?;
     let job_id_thread = job_id.clone();
     let downloads_task = downloads.clone();
     std::thread::Builder::new()
@@ -751,7 +761,7 @@ pub fn llm_download_model(model_id: String, app: AppHandle) -> Result<String, St
     let app_task = app.clone();
     let job_id = format!("model-{}", model.id);
     let downloads = app.state::<AppState>().llm.downloads.clone();
-    let cancel = downloads.register(&job_id);
+    let cancel = downloads.register(&job_id).map_err(|e| e.to_string())?;
     let job_id_thread = job_id.clone();
     let downloads_task = downloads.clone();
     let model_id = model.id.clone();
@@ -804,7 +814,7 @@ pub fn explain_change(
 
     // Resolve the change from the stored diff result: live job first, then
     // persisted-session namespace (`session-<store id>`, phase-08).
-    let result = if let Some(snapshot) = state.diff.snapshot(&diff_job_id) {
+    let result = if let Some(snapshot) = state.diff.snapshot(&diff_job_id)? {
         snapshot.result.ok_or_else(|| {
             format!(
                 "diff job {diff_job_id:?} has no result yet (state {:?})",
@@ -858,7 +868,7 @@ pub fn explain_change(
         .map_err(|e| e.to_string())?;
     let client = sidecar.client().map_err(|e| e.to_string())?;
 
-    let (job_id, cancel) = state.llm.explain.insert_running();
+    let (job_id, cancel) = state.llm.explain.insert_running()?;
     let lang = Lang::from_tag(&lang);
     let messages = build_explanation_messages(&ctx, lang, &ContextBudget::default());
 
@@ -934,9 +944,13 @@ pub fn explain_change(
 #[tauri::command]
 pub fn llm_cancel(job_id: String, state: State<AppState>) -> Result<bool, String> {
     if job_id.starts_with("explain-") {
-        return Ok(state.llm.explain.request_cancel(&job_id));
+        return state.llm.explain.request_cancel(&job_id);
     }
-    Ok(state.llm.downloads.cancel(&job_id))
+    state
+        .llm
+        .downloads
+        .cancel(&job_id)
+        .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -955,7 +969,7 @@ mod tests {
     fn headless_round_trip_runs_stages_and_finishes() {
         let diff = DiffState::default();
         let job_id = diff.next_job_id();
-        let cancel = diff.insert_running(&job_id);
+        let cancel = diff.insert_running(&job_id).unwrap();
         let a = write_temp("a.txt", "# Contract\n\nPayment within 30 days.\n");
         let b = write_temp("b.txt", "# Contract\n\nPayment within 45 days.\n");
 
@@ -973,7 +987,7 @@ mod tests {
             },
         );
 
-        let snap = diff.snapshot(&job_id).expect("job present");
+        let snap = diff.snapshot(&job_id).unwrap().expect("job present");
         assert_eq!(snap.state, JobState::Done);
         let result = snap.result.expect("result stored");
         assert_eq!(result.format, difflens_core::DocFormat::Txt);
@@ -992,13 +1006,13 @@ mod tests {
     fn cancel_before_start_marks_job_cancelled() {
         let diff = DiffState::default();
         let job_id = diff.next_job_id();
-        let cancel = diff.insert_running(&job_id);
+        let cancel = diff.insert_running(&job_id).unwrap();
         cancel.store(true, Ordering::SeqCst);
         let a = write_temp("c.txt", "one\n");
         let b = write_temp("d.txt", "two\n");
 
         execute_job(&job_id, &a, &b, None, &diff, cancel, None, |_, _| {});
-        let snap = diff.snapshot(&job_id).unwrap();
+        let snap = diff.snapshot(&job_id).unwrap().unwrap();
         assert_eq!(snap.state, JobState::Cancelled);
     }
 
@@ -1006,7 +1020,7 @@ mod tests {
     fn failing_input_marks_job_failed() {
         let diff = DiffState::default();
         let job_id = diff.next_job_id();
-        let cancel = diff.insert_running(&job_id);
+        let cancel = diff.insert_running(&job_id).unwrap();
         execute_job(
             &job_id,
             "/nonexistent/a.txt",
@@ -1017,7 +1031,7 @@ mod tests {
             None,
             |_, _| {},
         );
-        let snap = diff.snapshot(&job_id).unwrap();
+        let snap = diff.snapshot(&job_id).unwrap().unwrap();
         assert_eq!(snap.state, JobState::Failed);
         assert!(
             snap.error
@@ -1035,7 +1049,7 @@ mod tests {
         )));
         let diff = DiffState::default();
         let job_id = diff.next_job_id();
-        let cancel = diff.insert_running(&job_id);
+        let cancel = diff.insert_running(&job_id).unwrap();
         let a = write_temp("persist-a.txt", "# Contract\n\nPayment within 30 days.\n");
         let b = write_temp("persist-b.txt", "# Contract\n\nPayment within 45 days.\n");
 
@@ -1049,7 +1063,10 @@ mod tests {
             Some(&store),
             |_, _| {},
         );
-        assert_eq!(diff.snapshot(&job_id).unwrap().state, JobState::Done);
+        assert_eq!(
+            diff.snapshot(&job_id).unwrap().unwrap().state,
+            JobState::Done
+        );
 
         let guard = store.lock().unwrap();
         let db = guard.as_ref().unwrap();
@@ -1074,7 +1091,7 @@ mod tests {
         let store: StoreHandle = Arc::new(std::sync::Mutex::new(None));
         let diff = DiffState::default();
         let job_id = diff.next_job_id();
-        let cancel = diff.insert_running(&job_id);
+        let cancel = diff.insert_running(&job_id).unwrap();
         let a = write_temp("nofail-a.txt", "one\n");
         let b = write_temp("nofail-b.txt", "two\n");
 
@@ -1088,7 +1105,10 @@ mod tests {
             Some(&store),
             |_, _| {},
         );
-        assert_eq!(diff.snapshot(&job_id).unwrap().state, JobState::Done);
+        assert_eq!(
+            diff.snapshot(&job_id).unwrap().unwrap().state,
+            JobState::Done
+        );
     }
 
     #[test]
@@ -1204,7 +1224,7 @@ mod tests {
         // manager makes the closure abort (core then stops the transfer
         // with `CoreError::Cancelled`).
         let downloads = difflens_core::download::DownloadManager::new();
-        let cancel = downloads.register("model-unit-test");
+        let cancel = downloads.register("model-unit-test").unwrap();
         let mut calls = 0;
         let mut progress = |done: u64, total: Option<u64>| {
             let _ = (done, total);
@@ -1212,14 +1232,14 @@ mod tests {
             !cancel.load(Ordering::SeqCst)
         };
         assert!(progress(0, Some(10)), "runs while the flag is clear");
-        assert!(downloads.cancel("model-unit-test"));
+        assert!(downloads.cancel("model-unit-test").unwrap());
         assert!(!progress(1, Some(10)), "flagged closure must abort");
         downloads.finish(
             "model-unit-test",
             difflens_core::download::JobState::Cancelled,
             None,
         );
-        assert!(!downloads.cancel("model-unit-test"));
+        assert!(!downloads.cancel("model-unit-test").unwrap());
         assert_eq!(calls, 2);
     }
 
