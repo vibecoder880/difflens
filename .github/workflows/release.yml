@@ -105,23 +105,37 @@ jobs:
         shell: bash
         run: |
           set -e
-          # The Cargo workspace hoists target/ to the repo root (not
-          # src-tauri/target) — search both, wherever tauri-action built.
-          BUNDLE_ROOTS="."
-          echo "bundle dirs found:"
-          find $BUNDLE_ROOTS -maxdepth 5 -type d -path "*target/release/bundle" 2>/dev/null | head -5
-          echo "PDFium files inside built bundles:"
-          FOUND=$(find $BUNDLE_ROOTS -type f \( -name "pdfium.dll" -o -name "libpdfium.so" -o -name "libpdfium.dylib" \) -path "*bundle*" 2>/dev/null | head -5)
-          echo "$FOUND"
-          if [ -z "$FOUND" ]; then
-            echo "::error::PDFium library missing from built bundle — packaging regression (v1.0.0/1.0.1 shipped without it)"
-            exit 1
+          fail() { echo "::error::$1"; exit 1; }
+
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            # NSIS/MSI compress resources into the installer binary — loose
+            # files do not exist in the bundle dir. Verify the staged inputs
+            # were present pre-build and the installer embeds the file
+            # names (they appear in the installer's file table).
+            test -f src-tauri/resources/pdfium/pdfium.dll || fail "staged pdfium.dll missing pre-build"
+            test -f src-tauri/resources/models/e5-small/onnx/model_quantized.onnx || fail "staged e5 model missing pre-build"
+            EXE=$(find . -type f -name "*.exe" -path "*bundle*" 2>/dev/null | head -1)
+            MSI=$(find . -type f -name "*.msi" -path "*bundle*" 2>/dev/null | head -1)
+            for ART in "$EXE" "$MSI"; do
+              [ -n "$ART" ] || continue
+              echo "installer: $ART ($(stat -c%s "$ART" 2>/dev/null || wc -c < "$ART") bytes)"
+              grep -c "pdfium.dll" "$ART" >/dev/null || fail "pdfium.dll not referenced inside $ART"
+              grep -c "model_quantized.onnx" "$ART" >/dev/null || fail "model_quantized.onnx not referenced inside $ART"
+            done
+            echo "windows-bundles-ok"
+            exit 0
           fi
-          MODEL=$(find $BUNDLE_ROOTS -type f -name "model_quantized.onnx" -path "*bundle*" 2>/dev/null | head -2)
+
+          # Linux (.AppImage/.deb squash loose resources) and macOS (.app
+          # Contents/Resources keeps loose files): search the bundle tree.
+          # The Cargo workspace hoists target/ to the repo root — search
+          # everywhere under it, wherever tauri-action built.
+          echo "PDFium files inside built bundles:"
+          FOUND=$(find . -type f \( -name "pdfium.dll" -o -name "libpdfium.so" -o -name "libpdfium.dylib" \) -path "*bundle*" 2>/dev/null | head -5)
+          echo "$FOUND"
+          [ -n "$FOUND" ] || fail "PDFium library missing from built bundle — packaging regression (v1.0.0/1.0.1 shipped without it)"
+          MODEL=$(find . -type f -name "model_quantized.onnx" -path "*bundle*" 2>/dev/null | head -2)
           echo "e5-small model inside built bundles:"
           echo "$MODEL"
-          if [ -z "$MODEL" ]; then
-            echo "::error::e5-small model missing from built bundle — semantic alignment would silently fall back to the fake embedder"
-            exit 1
-          fi
+          [ -n "$MODEL" ] || fail "e5-small model missing from built bundle — semantic alignment would silently fall back to the fake embedder"
           echo "pdfium-bundled-ok; e5-model-bundled-ok"
