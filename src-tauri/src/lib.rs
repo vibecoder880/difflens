@@ -37,7 +37,7 @@ pub fn macos_version_tuple() -> Option<(u32, u32)> {
 }
 
 #[cfg(target_os = "macos")]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn __isPlatformVersionAtLeast(
     platform: i32,
     major: i32,
@@ -53,10 +53,11 @@ pub extern "C" fn __isPlatformVersionAtLeast(
         return 1; // cannot determine — optimistic (matches compiler-rt tone)
     };
     // The plist carries two components; patch granularity is ignored.
-    if os_major > major {
+    let (os_major_i, os_minor_i) = (os_major as i32, os_minor as i32);
+    if os_major_i > major {
         return 1;
     }
-    if os_major == major && os_minor >= minor.max(0) as u32 {
+    if os_major_i == major && os_minor_i >= minor {
         return 1;
     }
     0
