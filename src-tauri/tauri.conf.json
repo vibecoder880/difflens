@@ -27,7 +27,11 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "resources": ["resources/pdfium/*", "resources/models/e5-small/**"],
+    "resources": [
+      "resources/pdfium/*",
+      "resources/models/e5-small/onnx/*",
+      "resources/models/e5-small/tokenizer.json"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
