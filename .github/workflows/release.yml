@@ -93,6 +93,23 @@ jobs:
           bash scripts/fetch-pdfium.sh --bundle "$PLATFORM"
           ls -la src-tauri/resources/pdfium/
 
+      # ort-sys downloads its prebuilt ONNX Runtime from cdn.pyke.io inside
+      # its build script with NO retry — transient CDN "Peer disconnected"
+      # kills the whole tauri-action step. Pre-warm the cache with a retry
+      # loop so the real build never re-downloads.
+      - name: Pre-warm ort-sys cache (retry against CDN flakes)
+        shell: bash
+        run: |
+          for attempt in 1 2 3 4; do
+            if cargo check --release -p difflens-core; then
+              echo "ort-sys cache warm (attempt $attempt)"
+              exit 0
+            fi
+            echo "attempt $attempt failed (CDN flake?) — retrying in 30s"
+            sleep 30
+          done
+          exit 1
+
       - name: Build and upload release
         id: tauriBuild
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # tag: v0.6.2
