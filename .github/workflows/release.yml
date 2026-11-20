@@ -23,10 +23,17 @@ jobs:
             args: ""
           - os: macos-latest
             args: "--target aarch64-apple-darwin"
+            # ONNX Runtime (ort-sys prebuilt) is built against macOS 13.4 —
+            # linking with rustc's default min-version 11.0 fails on
+            # ___isPlatformVersionAtLeast (older compiler-rt lacks it).
+            # Raise the deployment target so compiler-rt matches.
+            macosx_deployment_target: "13.0"
           - os: windows-latest
             args: ""
 
     runs-on: ${{ matrix.os }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: ${{ matrix.macosx_deployment_target || '' }}
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # tag: v5.0.0 (node24-native)
 
@@ -108,20 +115,19 @@ jobs:
           fail() { echo "::error::$1"; exit 1; }
 
           if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            # NSIS/MSI compress resources into the installer binary — loose
-            # files do not exist in the bundle dir. Verify the staged inputs
-            # were present pre-build and the installer embeds the file
-            # names (they appear in the installer's file table).
+            # NSIS/MSI compress resources into the installer binary (solid
+            # archive — file names are compressed too, so binary-grep cannot
+            # see them). Proof of inclusion instead: the staged inputs must
+            # exist pre-build, and tauri-build itself fails the build when a
+            # bundle.resources glob matches no files (observed in the shell
+            # compile job). Artifacts must exist post-build.
             test -f src-tauri/resources/pdfium/pdfium.dll || fail "staged pdfium.dll missing pre-build"
             test -f src-tauri/resources/models/e5-small/onnx/model_quantized.onnx || fail "staged e5 model missing pre-build"
-            EXE=$(find . -type f -name "*.exe" -path "*bundle*" 2>/dev/null | head -1)
-            MSI=$(find . -type f -name "*.msi" -path "*bundle*" 2>/dev/null | head -1)
-            for ART in "$EXE" "$MSI"; do
-              [ -n "$ART" ] || continue
-              echo "installer: $ART ($(stat -c%s "$ART" 2>/dev/null || wc -c < "$ART") bytes)"
-              grep -c "pdfium.dll" "$ART" >/dev/null || fail "pdfium.dll not referenced inside $ART"
-              grep -c "model_quantized.onnx" "$ART" >/dev/null || fail "model_quantized.onnx not referenced inside $ART"
-            done
+            test -f src-tauri/resources/models/e5-small/tokenizer.json || fail "staged tokenizer.json missing pre-build"
+            ARTIFACTS=$(find . -type f \( -name "*-setup.exe" -o -name "*.msi" \) -path "*bundle*" 2>/dev/null | head -3)
+            echo "installers:"
+            echo "$ARTIFACTS"
+            [ -n "$ARTIFACTS" ] || fail "no installer artifacts found in bundle dir"
             echo "windows-bundles-ok"
             exit 0
           fi
