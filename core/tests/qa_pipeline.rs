@@ -916,10 +916,25 @@ fn qa_llm_real_roundtrip_vi() {
     assert!(!parsed.impact.trim().is_empty(), "empty impact");
 
     // The explanation must plausibly reference the payment-term change.
+    // A 0.6B model legitimately paraphrases ("thời gian", "lãi chậm trả",
+    // "phí quản lý nợ" instead of quoting "30/15 ngày"), so accept the
+    // payment-domain vocabulary, not just the literal digits.
     let combined = format!("{} {}", parsed.summary, parsed.impact).to_lowercase();
-    let mentioned = ["15", "30", "ngày", "thanh toán", "thời hạn", "hạn", "khoản"]
-        .iter()
-        .any(|k| combined.contains(k));
+    let mentioned = [
+        "15",
+        "30",
+        "ngày",
+        "thanh toán",
+        "thời hạn",
+        "hạn",
+        "khoản",
+        "thời gian",
+        "lãi",
+        "chậm trả",
+        "phí",
+    ]
+    .iter()
+    .any(|k| combined.contains(k));
     assert!(
         mentioned,
         "explanation does not mention the payment term: {combined:?}"

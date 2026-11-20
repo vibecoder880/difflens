@@ -129,7 +129,7 @@ pub fn load() -> Result<LoadedPdfium, String> {
         Err(e) => Err(format!(
             "PDFium library not found: no {DIFFLENS_PDFIUM_PATH_ENV} override, no bundled or \
              staged copy, and system bind failed: {e:?}. This is a packaging bug in an installed \
-             app — please report it at https://github.com/vibecoder880/difflens/issues"
+             app — please report it at github.com/vibecoder880/difflens/issues"
         )),
     }
 }
