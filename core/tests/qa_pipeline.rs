@@ -1,10 +1,15 @@
 //! QA hands-on integration tests (v1.0.2 release hardening, 2026-11-19).
 //!
 //! Real end-to-end invocations of the full pipeline over generated document
-//! pairs in `/tmp/dl-qa` (produced by `/tmp/dl-qa/gen_docs.py`): extract →
-//! align (real e5-small embedder when built with `--features
+//! pairs: extract → align (real e5-small embedder when built with `--features
 //! embeddings-ort`) → diff → heuristic enrich, plus store/report roundtrips,
 //! the download-manager checksum path and a real llama-server LLM roundtrip.
+//!
+//! The documents are hermetic: on first use the harness runs the committed,
+//! stdlib-only generator `scripts/gen-fixtures/gen_qa_docs.py` (python3)
+//! which writes the pairs into the workspace `target/qa-docs/` directory and
+//! drops a `.generated` marker. Delete the directory to force a fresh
+//! generation; no network, no model files, no `/tmp` state involved.
 //!
 //! Run (PDF tests need the staged pdfium, set below):
 //! ```text
@@ -22,16 +27,56 @@ use difflens_core::model::{BlockKind, ChangeKind, Severity, SpanOp};
 use difflens_core::pipeline;
 use difflens_core::store::{NewSession, Store};
 
-/// Document directory produced by gen_docs.py.
+/// Workspace directory holding the generated QA document pairs.
 fn qa_dir() -> PathBuf {
-    PathBuf::from("/tmp/dl-qa")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../target/qa-docs")
+}
+
+/// Generate the QA document set once per process when the `.generated`
+/// marker is absent (first run, or after `rm -rf target/qa-docs`).
+fn generate_qa_docs() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        let dir = qa_dir();
+        if dir.join(".generated").is_file() {
+            return;
+        }
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../scripts/gen-fixtures/gen_qa_docs.py");
+        assert!(
+            script.is_file(),
+            "QA fixture generator missing at {}",
+            script.display()
+        );
+        std::fs::create_dir_all(&dir).expect("create qa-docs dir");
+        let status = std::process::Command::new("python3")
+            .arg("-I")
+            .arg(&script)
+            .arg(&dir)
+            .status()
+            .expect(
+                "python3 is required to generate the QA fixtures — install it \
+                 or run scripts/gen-fixtures/gen_qa_docs.py manually",
+            );
+        assert!(
+            status.success(),
+            "QA fixture generation failed ({status}); delete {} and retry",
+            dir.display()
+        );
+        assert!(
+            dir.join(".generated").is_file(),
+            "generator ran but wrote no .generated marker into {}",
+            dir.display()
+        );
+    });
 }
 
 fn doc(name: &str) -> String {
+    generate_qa_docs();
     let p = qa_dir().join(name);
     assert!(
         p.is_file(),
-        "missing QA document {} — run: python3 -I /tmp/dl-qa/gen_docs.py",
+        "missing QA document {} — run: python3 -I scripts/gen-fixtures/gen_qa_docs.py",
         p.display()
     );
     p.to_str().unwrap().to_string()
@@ -55,7 +100,11 @@ fn ensure_pdfium() {
         unsafe {
             std::env::set_var("DIFFLENS_PDFIUM_PATH", &staged);
         }
-        assert!(staged.is_file(), "staged pdfium missing at {}", staged.display());
+        assert!(
+            staged.is_file(),
+            "staged pdfium missing at {}",
+            staged.display()
+        );
     });
 }
 
@@ -103,7 +152,10 @@ fn find_change<'a>(
         .unwrap_or_else(|| panic!("no change mentioning {needle:?}"))
 }
 
-fn flag<'a>(change: &'a difflens_core::model::Change, rule: &str) -> &'a difflens_core::model::HeuristicFlag {
+fn flag<'a>(
+    change: &'a difflens_core::model::Change,
+    rule: &str,
+) -> &'a difflens_core::model::HeuristicFlag {
     change
         .flags
         .iter()
@@ -142,11 +194,15 @@ fn qa_docx_contract_full_pipeline() {
         assert!(m.similarity.unwrap() > 0.99);
     }
     assert!(
-        moved.iter().any(|m| m.spans[0].text.contains("bàn giao phần mềm")),
+        moved
+            .iter()
+            .any(|m| m.spans[0].text.contains("bàn giao phần mềm")),
         "the delivery clause move was not detected"
     );
     assert!(
-        moved.iter().any(|m| m.spans[0].text.contains("bảo hành sản phẩm")),
+        moved
+            .iter()
+            .any(|m| m.spans[0].text.contains("bảo hành sản phẩm")),
         "the warranty clause move was not detected"
     );
 
@@ -159,16 +215,32 @@ fn qa_docx_contract_full_pipeline() {
         "DURATION_CHANGED delta = {:?}",
         dur.delta
     );
-    assert!(dur.old_value.as_deref().unwrap().contains("30 ngày"), "old {:?}", dur.old_value);
-    assert!(dur.new_value.as_deref().unwrap().contains("15 ngày"), "new {:?}", dur.new_value);
+    assert!(
+        dur.old_value.as_deref().unwrap().contains("30 ngày"),
+        "old {:?}",
+        dur.old_value
+    );
+    assert!(
+        dur.new_value.as_deref().unwrap().contains("15 ngày"),
+        "new {:?}",
+        dur.new_value
+    );
     let pct = flag(payment, "PERCENT_CHANGED");
-    assert!((pct.delta.unwrap() - 0.5).abs() < 1e-9, "percent delta {:?}", pct.delta);
+    assert!(
+        (pct.delta.unwrap() - 0.5).abs() < 1e-9,
+        "percent delta {:?}",
+        pct.delta
+    );
 
     // Penalty-money change: 5.000.000₫ → 12.000.000₫, severity ≥ High.
     let penalty = find_change(&result, "12.000.000₫");
     assert_eq!(penalty.kind, ChangeKind::Modified);
     let money = flag(penalty, "MONEY_CHANGED");
-    assert!((money.delta.unwrap() - 1.4).abs() < 1e-9, "money delta {:?}", money.delta);
+    assert!(
+        (money.delta.unwrap() - 1.4).abs() < 1e-9,
+        "money delta {:?}",
+        money.delta
+    );
     let sev = penalty.severity.expect("enriched severity");
     assert!(sev >= Severity::High, "penalty change severity = {sev:?}");
 
@@ -176,13 +248,25 @@ fn qa_docx_contract_full_pipeline() {
     let removed = result
         .changes
         .iter()
-        .find(|c| c.kind == ChangeKind::Removed && c.old_text.as_deref().unwrap_or_default().contains("báo cáo tiến độ"))
+        .find(|c| {
+            c.kind == ChangeKind::Removed
+                && c.old_text
+                    .as_deref()
+                    .unwrap_or_default()
+                    .contains("báo cáo tiến độ")
+        })
         .expect("deleted clause reported as Removed");
     assert!(removed.new_text.is_none() && removed.new_block_ids.is_empty());
     let added = result
         .changes
         .iter()
-        .find(|c| c.kind == ChangeKind::Added && c.new_text.as_deref().unwrap_or_default().contains("Bảo mật thông tin"))
+        .find(|c| {
+            c.kind == ChangeKind::Added
+                && c.new_text
+                    .as_deref()
+                    .unwrap_or_default()
+                    .contains("Bảo mật thông tin")
+        })
         .expect("new confidentiality clause reported as Added");
     assert!(added.old_text.is_none());
     assert!(
@@ -199,10 +283,7 @@ fn qa_docx_contract_full_pipeline() {
     assert_eq!(heading.kind, ChangeKind::Modified);
     assert!(heading.severity.is_some());
     assert!(
-        heading
-            .flags
-            .iter()
-            .any(|f| f.rule_id == "KEYWORD_RISK"),
+        heading.flags.iter().any(|f| f.rule_id == "KEYWORD_RISK"),
         "heading rename should carry the KEYWORD_RISK flag"
     );
 
@@ -213,15 +294,19 @@ fn qa_docx_contract_full_pipeline() {
         .filter(|c| c.kind != ChangeKind::Equal)
         .count();
     assert_eq!(result.audit.len(), non_equal, "audit trail size mismatch");
-    for (a, c) in result
-        .audit
-        .iter()
-        .zip(result.changes.iter().filter(|c| c.kind != ChangeKind::Equal))
-    {
+    for (a, c) in result.audit.iter().zip(
+        result
+            .changes
+            .iter()
+            .filter(|c| c.kind != ChangeKind::Equal),
+    ) {
         assert_eq!(a.change_id, c.id);
         assert_eq!(a.severity, c.severity.unwrap());
-        assert!(!a.rules.is_empty() || a.severity == Severity::Info,
-            "change {} has neither rules nor Info severity", c.id);
+        assert!(
+            !a.rules.is_empty() || a.severity == Severity::Info,
+            "change {} has neither rules nor Info severity",
+            c.id
+        );
     }
 
     // Determinism: run twice → byte-identical JSON (includes the audit trail).
@@ -237,6 +322,12 @@ fn qa_docx_contract_full_pipeline() {
 
 #[test]
 fn qa_pdf_pair_pages_and_alignment() {
+    // The generator skips the PDF fixtures when no Vietnamese-capable TTF
+    // exists (rare: CI and dev VMs ship DejaVu). Skip instead of failing.
+    if qa_dir().join(".pdf-font-missing").is_file() {
+        eprintln!("SKIP: no Vietnamese-capable TTF found — PDF fixtures not generated");
+        return;
+    }
     ensure_pdfium();
     let result = run_pipeline(&doc("contract-v1.pdf"), &doc("contract-v2.pdf"));
     assert_real_embeddings(&result);
@@ -250,7 +341,10 @@ fn qa_pdf_pair_pages_and_alignment() {
     // real page count of the extracted PDFs.
     let v1 = difflens_core::extract::extract_pdf(&doc("contract-v1.pdf")).expect("extract v1 pdf");
     let pages = v1.page_count.expect("pdf page count");
-    assert!(pages >= 2, "contract PDF should paginate, got {pages} page(s)");
+    assert!(
+        pages >= 2,
+        "contract PDF should paginate, got {pages} page(s)"
+    );
     let paired = result
         .changes
         .iter()
@@ -281,7 +375,10 @@ fn qa_pdf_pair_pages_and_alignment() {
     let payment = find_change(&result, "0,075%");
     let joined: String = payment.spans.iter().map(|s| s.text.as_str()).collect();
     assert!(joined.contains("Thanh toán"), "text: {joined:?}");
-    assert!(joined.contains("kể từ ngày xuất hóa đơn"), "text: {joined:?}");
+    assert!(
+        joined.contains("kể từ ngày xuất hóa đơn"),
+        "text: {joined:?}"
+    );
     // The percent digits survive as char-refined spans ("0,0" + "7" + "5%…").
     assert!(joined.contains("0,0"), "text: {joined:?}");
 }
@@ -324,7 +421,11 @@ fn qa_xlsx_cell_money_delta() {
         .expect("MONEY_CHANGED did not fire");
     assert_eq!(money_change.old_block_ids, vec![v1.blocks[4].id.clone()]);
     let money = flag(money_change, "MONEY_CHANGED");
-    assert!((money.delta.unwrap() - 1.0 / 3.0).abs() < 1e-9, "delta {:?}", money.delta);
+    assert!(
+        (money.delta.unwrap() - 1.0 / 3.0).abs() < 1e-9,
+        "delta {:?}",
+        money.delta
+    );
     assert_eq!(money.old_value.as_deref(), Some("1.500.000₫"));
     assert_eq!(money.new_value.as_deref(), Some("2.000.000₫"));
     assert_eq!(money_change.old_page, None, "spreadsheets have no pages");
@@ -336,8 +437,20 @@ fn qa_xlsx_cell_money_delta() {
         .find(|c| c.flags.iter().any(|f| f.rule_id == "REFERENCE_CHANGED"))
         .expect("REFERENCE_CHANGED did not fire");
     let refflag = flag(ref_change, "REFERENCE_CHANGED");
-    assert!(refflag.old_value.as_deref().unwrap().contains("2026/HD-001"));
-    assert!(refflag.new_value.as_deref().unwrap().contains("2026/HD-002"));
+    assert!(
+        refflag
+            .old_value
+            .as_deref()
+            .unwrap()
+            .contains("2026/HD-001")
+    );
+    assert!(
+        refflag
+            .new_value
+            .as_deref()
+            .unwrap()
+            .contains("2026/HD-002")
+    );
 
     // Plain text change: note cell gains the CPI clause (insertion).
     let text_change = find_change(&result, "CPI");
@@ -372,7 +485,11 @@ fn qa_pptx_slide_diff() {
     let slide1 = find_change(&result, "Thời gian thực hiện");
     assert_eq!(slide1.kind, ChangeKind::Modified);
     let dur = flag(slide1, "DURATION_CHANGED");
-    assert!((dur.delta.unwrap() - (-1.0 / 3.0)).abs() < 1e-9, "delta {:?}", dur.delta);
+    assert!(
+        (dur.delta.unwrap() - (-1.0 / 3.0)).abs() < 1e-9,
+        "delta {:?}",
+        dur.delta
+    );
     assert_eq!(slide1.old_page, Some(1));
     assert_eq!(slide1.new_page, Some(1));
 
@@ -413,8 +530,14 @@ Mọi khoản thanh toán chuyển khoản vào tài khoản Vietcombank chi nh�
         .filter(|s| s.op != SpanOp::Delete)
         .map(|s| s.text.as_str())
         .collect();
-    assert_eq!(rebuilt_old, old_expected, "spans do not reconstruct the old side");
-    assert_eq!(rebuilt_new, new_expected, "spans do not reconstruct the new side");
+    assert_eq!(
+        rebuilt_old, old_expected,
+        "spans do not reconstruct the old side"
+    );
+    assert_eq!(
+        rebuilt_new, new_expected,
+        "spans do not reconstruct the new side"
+    );
 
     // The changed words only: delete/insert content is small, not a rewrite.
     let deleted: String = payment
@@ -436,8 +559,15 @@ Mọi khoản thanh toán chuyển khoản vào tài khoản Vietcombank chi nh�
         "spans cover more than the changed words: del={deleted:?} ins={inserted:?}"
     );
     // No whole-document rewrite span: several equal runs must remain.
-    let equal_runs = payment.spans.iter().filter(|s| s.op == SpanOp::Equal).count();
-    assert!(equal_runs >= 2, "expected multiple equal runs, got {equal_runs}");
+    let equal_runs = payment
+        .spans
+        .iter()
+        .filter(|s| s.op == SpanOp::Equal)
+        .count();
+    assert!(
+        equal_runs >= 2,
+        "expected multiple equal runs, got {equal_runs}"
+    );
     let longest_equal = payment
         .spans
         .iter()
@@ -454,9 +584,20 @@ Mọi khoản thanh toán chuyển khoản vào tài khoản Vietcombank chi nh�
     let hostile = result
         .changes
         .iter()
-        .find(|c| c.new_text.as_deref().unwrap_or_default().contains("<script>alert('dl-xss')</script>"))
+        .find(|c| {
+            c.new_text
+                .as_deref()
+                .unwrap_or_default()
+                .contains("<script>alert('dl-xss')</script>")
+        })
         .expect("hostile added clause present");
-    assert!(hostile.new_text.as_deref().unwrap().contains("```fence thủ công```"));
+    assert!(
+        hostile
+            .new_text
+            .as_deref()
+            .unwrap()
+            .contains("```fence thủ công```")
+    );
 }
 
 // ===========================================================================
@@ -494,7 +635,10 @@ fn qa_store_and_reports_roundtrip() {
     assert_eq!(listed[0].format, difflens_core::model::DocFormat::Docx);
     assert_eq!(listed[0].stats.moved, 2);
 
-    let got = store.get_session("job-qa-docx").expect("get").expect("present");
+    let got = store
+        .get_session("job-qa-docx")
+        .expect("get")
+        .expect("present");
     assert_eq!(got.created_at, 1_700_000_000_000);
     let restored = got.result.expect("stored result deserializes");
     assert_eq!(restored.stats, docx_result.stats);
@@ -522,10 +666,10 @@ fn qa_store_and_reports_roundtrip() {
 
     // Persist for the external HTML-parser verification step (before the
     // asserts so artifacts survive a failure).
-    std::fs::write("/tmp/dl-qa/report.html", &html_md).unwrap();
-    std::fs::write("/tmp/dl-qa/report-contract.html", &html).unwrap();
-    std::fs::write("/tmp/dl-qa/report-xlsx.html", &html_xlsx).unwrap();
-    std::fs::write("/tmp/dl-qa/report.md", &md).unwrap();
+    std::fs::write(qa_dir().join("report.html"), &html_md).unwrap();
+    std::fs::write(qa_dir().join("report-contract.html"), &html).unwrap();
+    std::fs::write(qa_dir().join("report-xlsx.html"), &html_xlsx).unwrap();
+    std::fs::write(qa_dir().join("report.md"), &md).unwrap();
 
     // Content preserved: the raw Vietnamese percent survives escaping.
     assert!(html.contains("0,075%"), "percent value lost in HTML report");
@@ -534,7 +678,10 @@ fn qa_store_and_reports_roundtrip() {
     assert!(html.contains("−50%"), "duration delta formatting missing");
     assert!(html.contains("+140%"), "money delta formatting missing");
     assert!(html.contains("+50%"), "percent delta formatting missing");
-    assert!(!html.contains("<script"), "HTML report must never contain a raw <script");
+    assert!(
+        !html.contains("<script"),
+        "HTML report must never contain a raw <script"
+    );
 
     assert!(
         html_md.contains("&lt;script&gt;alert(&#x27;dl-xss&#x27;)&lt;/script&gt;"),
@@ -543,10 +690,16 @@ fn qa_store_and_reports_roundtrip() {
     assert!(html_md.contains("&lt;img src=x onerror=alert(2)&gt;"));
     assert!(!html_md.contains("<script"), "raw script tag leaked");
 
-    assert!(html_xlsx.contains("+33.3%"), "xlsx money delta formatting missing");
+    assert!(
+        html_xlsx.contains("+33.3%"),
+        "xlsx money delta formatting missing"
+    );
 
     // Markdown: fences chosen longer than any backtick run in the content.
-    assert!(md.contains("```fence thủ công```"), "content backticks lost");
+    assert!(
+        md.contains("```fence thủ công```"),
+        "content backticks lost"
+    );
     // The hostile line must sit inside a fence widened to 4 (content has a
     // 3-backtick run) so the run cannot terminate the block early.
     let lines: Vec<&str> = md.lines().collect();
@@ -622,6 +775,7 @@ fn qa_download_manager_checksum_path() {
 #[ignore = "needs llama-server binary + 639MB GGUF; run: cargo test -p difflens-core --features embeddings-ort --test qa_pipeline qa_llm_real_roundtrip_vi -- --ignored --nocapture"]
 fn qa_llm_real_roundtrip_vi() {
     use difflens_core::download::manifest::LlmManifest;
+    use difflens_core::download::{DownloadSpec, download_file};
     use difflens_core::llm::client::ChatOptions;
     use difflens_core::llm::explain::{
         ContextBudget, Lang, build_explanation_messages, change_context_from, parse_explanation,
@@ -633,40 +787,73 @@ fn qa_llm_real_roundtrip_vi() {
         .model("qwen3-0.6b-q8_0-test")
         .expect("manifest lost its test model entry");
 
-    // Model file locations, newest-first. If none exists the test downloads
-    // through the download manager (which also re-verifies the checksum).
-    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-    let candidates = [
-        std::env::var_os("DIFFLENS_QA_GGUF").map(PathBuf::from),
-        Some(PathBuf::from("/tmp/llm-verify/model/Qwen3-0.6B-Q8_0.gguf")),
-        Some(repo.join("resources/binaries/llm-cache/models").join(&model.file)),
-        Some(repo.join("target/llm-cache/models").join(&model.file)),
-    ];
-    let model_path = candidates
-        .into_iter()
-        .flatten()
-        .find(|p| p.is_file())
-        .unwrap_or_else(|| {
-            panic!(
-                "no GGUF found (tried DIFFLENS_QA_GGUF, /tmp/llm-verify, llm-cache, target cache)"
-            )
-        });
+    // Self-sufficient install through the download manager (same flow as
+    // llm_tests::llm_real_roundtrip, shared DIFFLENS_LLM_CACHE-aware cache
+    // root): download-if-missing, checksum-verify, hardened extraction.
+    let cache = std::env::var_os("DIFFLENS_LLM_CACHE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../target/llm-cache"));
+    let bin_root = cache.join("bin");
+    let models_dir = cache.join("models");
+    std::fs::create_dir_all(&bin_root).unwrap();
+    std::fs::create_dir_all(&models_dir).unwrap();
+
+    let server_asset = manifest
+        .llama_server
+        .assets
+        .iter()
+        .find(|a| a.target_triple == difflens_core::download::manifest::current_target_triple())
+        .unwrap_or_else(|| panic!("no pinned llama-server asset for this triple in the manifest"));
+
+    let archive_path = bin_root.join(format!(
+        "llama-{}-bin-{}.archive",
+        manifest.llama_server.tag, server_asset.id
+    ));
+    if !archive_path.exists() {
+        let mut spec = DownloadSpec::new(
+            server_asset.url.clone(),
+            archive_path.clone(),
+            server_asset.sha256.clone(),
+        );
+        spec.expected_bytes = Some(server_asset.bytes);
+        download_file(&spec, &mut |_, _| true).expect("llama-server bundle download");
+    }
+    let server_bin = match difflens_core::llm::sidecar::detect_installed(
+        &bin_root,
+        &manifest.llama_server.tag,
+    ) {
+        Some(p) => p,
+        None => difflens_core::llm::sidecar::install_bundle(
+            &archive_path,
+            server_asset.archive,
+            &manifest.llama_server.tag,
+            &bin_root,
+            &difflens_core::download::archive::ExtractLimits::default(),
+        )
+        .expect("llama-server install"),
+    };
+
+    // Model file locations, newest-first; download through the manager if
+    // none of the caches has it (checksum verified on every path).
+    let model_path = if let Some(p) = std::env::var_os("DIFFLENS_QA_GGUF").map(PathBuf::from) {
+        p
+    } else {
+        let shared = models_dir.join(&model.file);
+        if shared.is_file() {
+            shared
+        } else {
+            let mut spec =
+                DownloadSpec::new(model.url.clone(), shared.clone(), model.sha256.clone());
+            spec.expected_bytes = Some(model.bytes);
+            download_file(&spec, &mut |_, _| true).expect("test GGUF download");
+            shared
+        }
+    };
 
     // Checksum verification path against the manifest pin (real sha256 of
     // the whole 639 MB file).
     difflens_core::download::checksum::verify_file(&model_path, &model.sha256, 0)
-        .expect("cached GGUF fails the manifest checksum");
-
-    // llama-server binary from the repo llm-cache.
-    let server_bin = repo
-        .join("resources/binaries/llm-cache/bin/llama-server-b12503")
-        .join("llama-server");
-    let server_bin = if server_bin.is_file() {
-        server_bin
-    } else {
-        difflens_core::llm::sidecar::detect_on_path()
-            .expect("llama-server not found in llm-cache or on PATH")
-    };
+        .expect("GGUF fails the manifest checksum");
 
     // The same contract pair as test 1, change #1 = the payment-term change.
     let result = run_pipeline(&doc("contract-v1.docx"), &doc("contract-v2.docx"));
@@ -683,7 +870,11 @@ fn qa_llm_real_roundtrip_vi() {
     cfg.threads = Some(2); // 3-core VM: leave a core for the test process
     let started = std::time::Instant::now();
     let server = SidecarProcess::spawn(&cfg).expect("llama-server sidecar spawn");
-    eprintln!("sidecar ready at {} in {:?}", server.base_url, started.elapsed());
+    eprintln!(
+        "sidecar ready at {} in {:?}",
+        server.base_url,
+        started.elapsed()
+    );
 
     let client = server.client().expect("client");
     let opts = ChatOptions {
@@ -711,7 +902,10 @@ fn qa_llm_real_roundtrip_vi() {
     // Streamed tokens arrived and the stream terminated cleanly.
     assert!(tokens.len() >= 5, "only {} tokens streamed", tokens.len());
     assert!(
-        matches!(stream.finish_reason.as_deref(), Some("stop") | Some("length")),
+        matches!(
+            stream.finish_reason.as_deref(),
+            Some("stop") | Some("length")
+        ),
         "unclean termination: {:?}",
         stream.finish_reason
     );
@@ -730,7 +924,7 @@ fn qa_llm_real_roundtrip_vi() {
         mentioned,
         "explanation does not mention the payment term: {combined:?}"
     );
-    std::fs::write("/tmp/dl-qa/explanation-vi.txt", &stream.text).unwrap();
+    std::fs::write(qa_dir().join("explanation-vi.txt"), &stream.text).unwrap();
 
     server.kill();
 }

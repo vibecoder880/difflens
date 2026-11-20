@@ -134,6 +134,15 @@ jobs:
       - name: Rust cache
         uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # tag: v2.9.3
 
+      # tauri-build validates `bundle.resources` globs at compile time —
+      # the bundled pdfium library + e5 model must exist even for a plain
+      # `cargo check`, so fetch both (same files the release packages).
+      - name: Fetch bundled resources (pdfium + e5 model)
+        run: |
+          bash scripts/fetch-pdfium.sh --bundle linux-x64
+          bash scripts/fetch-models.sh --bundle
+          ls -la src-tauri/resources/pdfium/ src-tauri/resources/models/e5-small/onnx/
+
       - name: check shell
         run: cargo check -p difflens
 

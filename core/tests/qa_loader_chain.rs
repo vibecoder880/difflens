@@ -21,8 +21,52 @@
 
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::Once;
 
-const FAKE_RESOURCES: &str = "/tmp/dl-qa/fake-resources";
+/// Workspace directory holding the generated QA document pairs (shared with
+/// qa_pipeline.rs; provisioned on demand by the same committed generator).
+fn qa_docs_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../target/qa-docs")
+}
+
+/// Fake packaged-app resources dir, staged inside the workspace target tree.
+fn fake_resources() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../target/qa-fake-resources")
+}
+
+/// Generate the QA document set once per process when the `.generated`
+/// marker is absent (same flow as qa_pipeline.rs::doc).
+fn generate_qa_docs() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        let dir = qa_docs_dir();
+        if dir.join(".generated").is_file() {
+            return;
+        }
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../scripts/gen-fixtures/gen_qa_docs.py");
+        assert!(
+            script.is_file(),
+            "QA fixture generator missing at {}",
+            script.display()
+        );
+        std::fs::create_dir_all(&dir).expect("create qa-docs dir");
+        let status = std::process::Command::new("python3")
+            .arg("-I")
+            .arg(&script)
+            .arg(&dir)
+            .status()
+            .expect(
+                "python3 is required to generate the QA fixtures — install it \
+                 or run scripts/gen-fixtures/gen_qa_docs.py manually",
+            );
+        assert!(
+            status.success(),
+            "QA fixture generation failed ({status}); delete {} and retry",
+            dir.display()
+        );
+    });
+}
 
 fn scenario() -> Option<String> {
     std::env::var("DIFFLENS_QA_SCENARIO")
@@ -31,10 +75,11 @@ fn scenario() -> Option<String> {
 }
 
 fn contract_pdf() -> String {
-    let p = PathBuf::from("/tmp/dl-qa/contract-v1.pdf");
+    generate_qa_docs();
+    let p = qa_docs_dir().join("contract-v1.pdf");
     assert!(
         p.is_file(),
-        "missing {} — run: python3 -I /tmp/dl-qa/gen_docs.py",
+        "missing {} — run: python3 -I scripts/gen-fixtures/gen_qa_docs.py",
         p.display()
     );
     p.to_str().unwrap().to_string()
@@ -43,7 +88,8 @@ fn contract_pdf() -> String {
 /// Real extraction through the public pipeline entry point.
 fn extract_pdf_works(note: &str) {
     let old = contract_pdf();
-    let new = PathBuf::from("/tmp/dl-qa/contract-v2.pdf")
+    let new = qa_docs_dir()
+        .join("contract-v2.pdf")
         .to_str()
         .unwrap()
         .to_string();
@@ -75,10 +121,14 @@ fn scenario_bundled_resource_dir() {
     // SAFETY: dedicated child process for this scenario.
     unsafe {
         std::env::remove_var("DIFFLENS_PDFIUM_PATH");
-        std::env::set_var("DIFFLENS_RESOURCE_DIR", FAKE_RESOURCES);
+        let fake = fake_resources().to_str().unwrap().to_string();
+        std::env::set_var("DIFFLENS_RESOURCE_DIR", &fake);
     }
     assert!(
-        PathBuf::from(FAKE_RESOURCES).join("pdfium").join("libpdfium.so").is_file(),
+        fake_resources()
+            .join("pdfium")
+            .join("libpdfium.so")
+            .is_file(),
         "fake resources dir was not staged by the orchestrator"
     );
     extract_pdf_works("bundled-resource path");
@@ -94,7 +144,7 @@ fn scenario_staged_fallback() {
         std::env::remove_var("DIFFLENS_RESOURCE_DIR");
     }
     assert!(
-        !PathBuf::from(FAKE_RESOURCES).exists(),
+        !fake_resources().exists(),
         "orchestrator must delete the fake resources dir before this scenario"
     );
     extract_pdf_works("staged-copy fallback");
@@ -106,7 +156,10 @@ fn scenario_explicit_path_missing_fails() {
         return;
     }
     unsafe {
-        std::env::set_var("DIFFLENS_PDFIUM_PATH", "/tmp/dl-qa/no-such-dir/libpdfium.so");
+        std::env::set_var(
+            "DIFFLENS_PDFIUM_PATH",
+            qa_docs_dir().join("no-such-dir").join("libpdfium.so"),
+        );
     }
     let old = contract_pdf();
     let err = difflens_core::pipeline::run(
@@ -138,10 +191,14 @@ fn qa_loader_chain_orchestrator() {
         .join("pdfium")
         .join("lib")
         .join("libpdfium.so");
-    assert!(staged.is_file(), "staged pdfium missing at {}", staged.display());
+    assert!(
+        staged.is_file(),
+        "staged pdfium missing at {}",
+        staged.display()
+    );
 
     // Stage the fake packaged-app resources dir.
-    let fake = PathBuf::from(FAKE_RESOURCES);
+    let fake = fake_resources();
     let _ = std::fs::remove_dir_all(&fake);
     std::fs::create_dir_all(fake.join("pdfium")).unwrap();
     std::fs::copy(&staged, fake.join("pdfium").join("libpdfium.so")).unwrap();
@@ -175,22 +232,46 @@ fn qa_loader_chain_orchestrator() {
     // 1. Bundled-resource path (the NEW packaged-app resolution).
     let (ok, out, err) = run_scenario(
         "scenario_bundled_resource_dir",
-        &[("DIFFLENS_PDFIUM_PATH", None), ("DIFFLENS_RESOURCE_DIR", Some(FAKE_RESOURCES.into()))],
+        &[
+            ("DIFFLENS_PDFIUM_PATH", None),
+            (
+                "DIFFLENS_RESOURCE_DIR",
+                Some(fake.clone().into_os_string().into_string().unwrap()),
+            ),
+        ],
     );
-    assert!(ok, "bundled-resource scenario failed\nstdout:\n{out}\nstderr:\n{err}");
+    assert!(
+        ok,
+        "bundled-resource scenario failed\nstdout:\n{out}\nstderr:\n{err}"
+    );
 
     // 2. Delete the fake dir → the loader must fall through to the staged copy.
     std::fs::remove_dir_all(&fake).unwrap();
     let (ok, out, err) = run_scenario(
         "scenario_staged_fallback",
-        &[("DIFFLENS_PDFIUM_PATH", None), ("DIFFLENS_RESOURCE_DIR", None)],
+        &[
+            ("DIFFLENS_PDFIUM_PATH", None),
+            ("DIFFLENS_RESOURCE_DIR", None),
+        ],
     );
-    assert!(ok, "staged-fallback scenario failed\nstdout:\n{out}\nstderr:\n{err}");
+    assert!(
+        ok,
+        "staged-fallback scenario failed\nstdout:\n{out}\nstderr:\n{err}"
+    );
 
     // 3. Explicit-but-missing override fails loudly (no silent fallback).
+    let missing = qa_docs_dir()
+        .join("no-such-dir")
+        .join("libpdfium.so")
+        .to_str()
+        .unwrap()
+        .to_string();
     let (ok, out, err) = run_scenario(
         "scenario_explicit_path_missing_fails",
-        &[("DIFFLENS_PDFIUM_PATH", Some("/tmp/dl-qa/no-such-dir/libpdfium.so".into()))],
+        &[("DIFFLENS_PDFIUM_PATH", Some(missing))],
     );
-    assert!(ok, "explicit-missing scenario failed\nstdout:\n{out}\nstderr:\n{err}");
+    assert!(
+        ok,
+        "explicit-missing scenario failed\nstdout:\n{out}\nstderr:\n{err}"
+    );
 }

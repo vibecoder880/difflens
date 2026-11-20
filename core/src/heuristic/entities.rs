@@ -1013,7 +1013,11 @@ mod tests {
             .iter()
             .find(|f| f.rule_id == crate::heuristic::deltas::RULE_PERCENT_CHANGED)
             .expect("PERCENT_CHANGED fired");
-        assert!((pct.delta.unwrap() - 0.5).abs() < 1e-9, "delta {:?}", pct.delta);
+        assert!(
+            (pct.delta.unwrap() - 0.5).abs() < 1e-9,
+            "delta {:?}",
+            pct.delta
+        );
         let detail = pct.detail.as_deref().unwrap();
         assert!(detail.starts_with("0.05%→"), "detail {detail:?}");
         assert!(detail.contains("pp"), "detail {detail:?}");
