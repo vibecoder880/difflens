@@ -13,7 +13,10 @@ pub mod normalize;
 // `pub(crate)`: the Phase-06 OCR fallback shares this module's pdfium
 // binding and textless-page scan.
 pub(crate) mod pdf;
-mod pdfium_loader;
+// `pub`: the Tauri shell reads the bundled-resource env var names
+// (DIFFLENS_RESOURCE_DIR) to seed the packaged-app loader; the loader
+// functions themselves stay `pub(crate)`.
+pub mod pdfium_loader;
 mod pptx;
 mod txt;
 mod xlsx;
