@@ -11,6 +11,7 @@
 
 use similar::{ChangeTag, TextDiff};
 
+use crate::diff::bounded_jaro_winkler;
 use crate::model::{DiffSpan, SpanOp};
 
 /// Minimum jaro-winkler similarity between the joined sides of a Replace
@@ -44,7 +45,7 @@ pub fn word_spans(old: &str, new: &str) -> Vec<DiffSpan> {
             push_span(spans, SpanOp::Insert, &inserted);
         } else if inserted.is_empty() {
             push_span(spans, SpanOp::Delete, &deleted);
-        } else if strsim::jaro_winkler(&deleted, &inserted) >= CHAR_REFINE_MIN_SIMILARITY {
+        } else if bounded_jaro_winkler(&deleted, &inserted) >= CHAR_REFINE_MIN_SIMILARITY {
             // Similar word pair → char-granular refinement.
             let char_diff = TextDiff::from_chars(&deleted, &inserted);
             for char_op in char_diff.ops() {

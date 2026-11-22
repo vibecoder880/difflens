@@ -290,7 +290,10 @@ fn fmt_money(v: f64, c: super::entities::Currency) -> String {
 /// zeros trimmed. Avoids platform-dependent `{:?}` output.
 fn fmt_f64(v: f64) -> String {
     if (v - v.round()).abs() < 1e-9 {
-        format!("{}", v.round() as i64)
+        // f64 Display prints whole values without a fraction ("42", "-9e18")
+        // — unlike a cast to i64, which saturates at ±2^63 and would corrupt
+        // absurd-but-parseable amounts.
+        format!("{}", v.round())
     } else {
         let s = format!("{v:.2}");
         s.trim_end_matches('0').trim_end_matches('.').to_string()

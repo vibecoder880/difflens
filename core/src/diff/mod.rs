@@ -23,6 +23,29 @@ use crate::model::{Block, Change, ChangeKind, DiffSpan, DiffStats, SpanOp};
 /// are not moves).
 const MOVE_DISPLACEMENT_MIN: usize = 2;
 
+/// Cap on the text length fed to `strsim::jaro_winkler`. The crate's Jaro
+/// is O(n·m) in the input lengths; on very large blocks (e.g. one pasted
+/// 500 KB paragraph) a full comparison stalls for minutes (measured: 39 s
+/// for 50 KB × 50 KB, quadratic from there). Inputs beyond the cap are
+/// compared by their prefixes — a bounded, deterministic approximation
+/// that stays exact for everything document-paragraph-sized.
+pub const SIMILARITY_INPUT_CAP: usize = 8 * 1024;
+
+/// `strsim::jaro_winkler` with quadratic-blowup protection: inputs longer
+/// than [`SIMILARITY_INPUT_CAP`] *chars* are truncated at a char boundary.
+pub fn bounded_jaro_winkler(a: &str, b: &str) -> f64 {
+    fn cap(s: &str) -> &str {
+        if s.chars().count() <= SIMILARITY_INPUT_CAP {
+            return s;
+        }
+        match s.char_indices().nth(SIMILARITY_INPUT_CAP) {
+            Some((i, _)) => &s[..i],
+            None => s,
+        }
+    }
+    strsim::jaro_winkler(cap(a), cap(b))
+}
+
 /// Diff two block lists over the given alignment pairs `(old_idx, new_idx)`.
 ///
 /// Malformed pairs (out-of-range indices, duplicates) are skipped instead of
@@ -118,7 +141,7 @@ fn build_change(
                 ob.map(|b| b.text.as_str()).unwrap_or_default(),
                 nb.map(|b| b.text.as_str()).unwrap_or_default(),
             );
-            Some(strsim::jaro_winkler(a, b) as f32)
+            Some(bounded_jaro_winkler(a, b) as f32)
         }
         ChangeKind::Added | ChangeKind::Removed => None,
     };

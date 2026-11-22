@@ -350,8 +350,10 @@ fn money_regex() -> &'static Regex {
         // matches, the match starts exactly at the first digit (a leading
         // `\s*` outside would be absorbed into the span and then trip the
         // left word-boundary guard on text like `phạt 5.000.000₫`).
+        // `sign` captures a leading minus so a debt→credit flip
+        // (`-1.000.000₫` → `1.000.000₫`) is a value change, not a no-op.
         Regex::new(
-            "(?i)(?:(?P<pre>US\\$|USD|\\$|EUR|€)\\s*)?(?P<num>\\d[\\d.,]*)\\s*\
+            "(?i)(?:(?P<pre>US\\$|USD|\\$|EUR|€)\\s*)?(?P<sign>-?)(?P<num>\\d[\\d.,]*)\\s*\
              (?P<scale>triệu|tỷ|nghìn|ngàn|[kK])?\\s*\
              (?P<cur>₫|VNĐ|đồng|VND|đ|USD|\\$|EUR|€)?",
         )
@@ -408,7 +410,8 @@ fn collect_money(text: &str, occupied: &mut Vec<(usize, usize)>, out: &mut Vec<E
         let Some(amount_num) = parse_number(trim_num_token(num.as_str())) else {
             continue;
         };
-        let mut amount = amount_num;
+        let negative = caps.name("sign").is_some_and(|m| m.as_str() == "-");
+        let mut amount = if negative { -amount_num } else { amount_num };
         let mut scale_note = None;
         if let Some(s) = scale
             && let Some((factor, note)) = scale_factor(s.as_str())
@@ -645,7 +648,7 @@ fn collect_durations(text: &str, occupied: &mut Vec<(usize, usize)>, out: &mut V
 
 fn percent_numeric_regex() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"(?P<num>\d+(?:[.,]\d+)?)\s?%").expect("percent regex"))
+    RE.get_or_init(|| Regex::new(r"(?P<num>-?\d+(?:[.,]\d+)?)\s?%").expect("percent regex"))
 }
 
 fn percent_word_regex() -> &'static Regex {
@@ -688,9 +691,20 @@ fn collect_percents(text: &str, occupied: &mut Vec<(usize, usize)>, out: &mut Ve
         if overlaps(occupied, whole.start(), whole.end()) {
             continue;
         }
-        let Some(value) = caps.name("num").and_then(|m| parse_number(m.as_str())) else {
+        let raw_num = caps.name("num").map(|m| m.as_str()).unwrap_or_default();
+        // Negative percentages keep their sign (`-5%` ≠ `5%`); a sign glued
+        // to a preceding word (`abc-5%`) is a hyphenation, not a negative.
+        let negative = raw_num.starts_with('-');
+        if negative && whole.start() > 0 && is_word_byte(text.as_bytes()[whole.start() - 1]) {
+            continue;
+        }
+        let unsigned = if negative { &raw_num[1..] } else { raw_num };
+        let Some(mut value) = parse_number(unsigned) else {
             continue;
         };
+        if negative {
+            value = -value;
+        }
         out.push(Entity {
             kind: EntityKind::Percent,
             text: whole.as_str().to_string(),

@@ -4,6 +4,34 @@ All notable changes to DiffLens are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.0.3] — 2026-11-22
+
+Correctness fixes from the adversarial bug sweep (58 new edge-case tests).
+
+### Fixed
+
+- **Negative money and percentages now produce correct deltas** —
+  `-1.000.000₫ → 1.000.000₫` and `-5% → -3%` previously computed deltas
+  as if both values were positive (sign was dropped at extraction).
+  Sign-glued hyphenation (`abc-5%`) is still treated as text, not a
+  negative value.
+- **Very large paragraphs no longer stall the diff** — the word-level
+  similarity check was quadratic in input size; a pasted 500 KB paragraph
+  could hang comparison for minutes. Inputs beyond 8 Ki-characters are
+  now compared by bounded prefixes (500 KB pair: minutes → ~0.4 s).
+- Extreme amounts (≥ 2^63) no longer saturate flag-detail formatting
+  (the delta itself was already correct).
+
+### Added
+
+- 58 adversarial/edge-case tests: truncated and corrupt archives per
+  format, random-bytes-with-PDF-magic, NUL/control characters, empty vs
+  empty documents, 10 k-paragraph performance canaries, concurrent store
+  writers, byte-flipped SQLite degradation, fragmented SSE frames,
+  numeric boundary values, and a locale-canary guard.
+- Locale check: pipeline output is byte-identical under `C` and
+  `C.utf8` (no locale-dependent formatting leaks).
+
 ## [1.0.2] — 2026-11-19
 
 Packaging fix release — found by hands-on testing with real documents.
